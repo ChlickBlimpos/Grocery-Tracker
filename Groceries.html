@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Household Grocery Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans p-4 sm:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="mb-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-4xl font-bold text-gray-900">Grocery Tracker (v1.0)</h1>
+                    <p class="text-gray-600">Custom Pantry & Meal Plan</p>
+                </div>
+                <button id="pause-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Pause Tracker</button>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <section id="meal-planner" class="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                <div class="flex justify-between items-center border-b pb-2 mb-4">
+                     <h2 class="text-2xl font-semibold">🗓️ Daily Meal Planner</h2>
+                     <div class="flex space-x-2">
+                        <button id="prev-day-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">‹ Prev</button>
+                        <button id="next-day-btn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition-colors">Next ›</button>
+                     </div>
+                </div>
+                <div id="planner-grid" class="space-y-4">
+                    <!-- The daily planner view will be dynamically generated here -->
+                </div>
+            </section>
+
+            <aside class="space-y-8">
+                <section id="pantry-view" class="bg-white p-6 rounded-lg shadow-md">
+                    <div class="flex justify-between items-center border-b pb-2 mb-4">
+                        <h2 class="text-2xl font-semibold">🥫 Pantry</h2>
+                        <span id="low-stock-label" class="text-sm text-red-600" style="display: none;">⚠️ Low Stock Alert</span>
+                    </div>
+                    <div id="pantry-list" class="space-y-2 max-h-[40rem] overflow-y-auto">
+                        <!-- Pantry items will be dynamically inserted here -->
+                    </div>
+                </section>
+
+                <section id="grocery-check-in" class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛒 Add Groceries</h2>
+                    <form id="add-groceries-form" class="space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex-grow">
+                                <label for="add-grocery-select" class="text-sm font-medium">Item</label>
+                                <select id="add-grocery-select" class="w-full mt-1 p-2 border rounded-md"></select>
+                            </div>
+                            <div>
+                                <label for="add-grocery-quantity" class="text-sm font-medium">Quantity</label>
+                                <input type="number" step="any" id="add-grocery-quantity" class="w-full mt-1 p-2 border rounded-md" min="0" placeholder="0">
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                            Add Item
+                        </button>
+                    </form>
+                </section>
+                
+                <section id="set-stock-section" class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛠️ Correct Stock Levels</h2>
+                    <form id="set-stock-form" class="space-y-3">
+                        <div>
+                             <label for="set-stock-select" class="text-sm font-medium">Item</label>
+                             <select id="set-stock-select" class="w-full mt-1 p-2 border rounded-md"></select>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label for="set-stock-quantity" class="text-sm font-medium">New Quantity</label>
+                                <input type="number" step="any" id="set-stock-quantity" class="w-full mt-1 p-2 border rounded-md" min="0" placeholder="0">
+                            </div>
+                            <div class="flex-grow">
+                                <label for="set-stock-unit-select" class="text-sm font-medium">Unit</label>
+                                <select id="set-stock-unit-select" class="w-full mt-1 p-2 border rounded-md"></select>
+                            </div>
+                        </div>
+                        <div class="flex space-x-2">
+                             <button type="submit" class="w-full bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 transition-colors">
+                                Set Stock
+                            </button>
+                            <button type="button" id="reset-stock-btn" class="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition-colors">
+                                Reset to 0
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            </aside>
+
+        </main>
+    </div>
+
+    <script>
+        // --- DATA "DATABASES" ---
+        const forecastDays = 30; // low stock warning for a full month
+
+        let initialPantry = [
+            // Pantry Items with updated units
+            { id: 'salmon_fillets', name: 'Salmon Fillets', unit: 'portions', quantity: 3 },
+            { id: 'dolmio_sauce', name: 'Dolmio Sauce', unit: 'servings', quantity: 10 },
+            { id: 'bread_loaf', name: 'Bread', unit: 'loaves', quantity: 1 },
+            { id: 'crumpets', name: 'Crumpets', unit: 'count', quantity: 31 },
+            { id: 'fresh_chicken_soup', name: 'Fresh Chicken Soup', unit: 'containers', quantity: 2 },
+            { id: 'frozen_chicken_soup', name: 'Frozen Chicken Soup', unit: 'containers', quantity: 4 },
+            { id: 'chorizo_tortellini', name: 'Chorizo Tortellini', unit: 'packs', quantity: 3 },
+            { id: 'spinach_tortellini', name: 'Spinach Tortellini', unit: 'packs', quantity: 3 },
+            { id: 'fresh_pasta', name: 'Fresh Pasta', unit: 'portions (half pack)', quantity: 2 },
+            { id: 'gnocchi', name: 'Gnocchi', unit: 'packs', quantity: 2 },
+            { id: 'dry_pasta', name: 'Dry Pasta', unit: 'portions (200g)', quantity: 25 },
+            { id: 'oranges', name: 'Oranges', unit: 'count', quantity: 8 },
+            { id: 'chicken_breast', name: 'Chicken Breast', unit: 'count', quantity: 2 },
+            { id: 'peas', name: 'Peas (Frozen)', unit: 'bags (850g)', quantity: 2 },
+            { id: 'sprouts', name: 'Sprouts', unit: 'portions (200g)', quantity: 15 },
+            { id: 'fresh_corn_soup', name: 'Fresh Corn Soup', unit: 'containers', quantity: 3 },
+            { id: 'frozen_leek_soup', name: 'Frozen Leek Soup', unit: 'containers', quantity: 2 },
+            { id: 'potatoes', name: 'Potatoes', unit: 'bags (1kg)', quantity: 2 },
+            { id: 'tortilla_wraps', name: 'Tortilla Wraps', unit: 'portions (4 wraps)', quantity: 2 },
+            { id: 'lettuce', name: 'Lettuce', unit: 'heads', quantity: 1 },
+            { id: 'breaded_chicken_breast', name: 'Breaded Chicken', unit: 'portions', quantity: 2 },
+            { id: 'light_flatbread', name: 'Light Flatbread', unit: 'count', quantity: 4 },
+            { id: 'carrots', name: 'Carrots', unit: 'bags (1kg)', quantity: 1 },
+            { id: 'pork_loin', name: 'Pork Loin', unit: 'portions', quantity: 3 },
+            { id: 'rice', name: 'Rice', unit: 'bags (1kg)', quantity: 1 },
+            { id: 'straight_fries', name: 'Straight Fries', unit: 'portions (500g)', quantity: 1.2 },
+            { id: 'beans', name: 'Beans', unit: 'cans', quantity: 9 },
+            { id: 'sausages', name: 'Sausages', unit: 'portions', quantity: 4 },
+            { id: 'hash_browns', name: 'Hash Browns', unit: 'portions', quantity: 4 },
+            { id: 'chunky_fries', name: 'Chunky Fries', unit: 'portions (500g)', quantity: 8.2 },
+            { id: 'chicken_nuggets', name: 'Chicken Nuggets', unit: 'packs', quantity: 2 },
+            { id: 'heavy_flatbread', name: 'Heavy Flatbread', unit: 'count', quantity: 2 },
+            { id: 'chorizo', name: 'Chorizo Sausage', unit: 'portions (1/4 sausage)', quantity: 4 },
+            { id: 'cheese_pizza', name: 'Cheese Pizza', unit: 'count', quantity: 1 },
+            { id: 'pepperoni_pizza', name: 'Pepperoni Pizza', unit: 'count', quantity: 1 },
+            { id: 'oat_milk', name: 'Oat Milk', unit: 'cartons', quantity: 7, lowStockThreshold: 3 },
+            { id: 'ketchup', name: 'Ketchup', unit: 'bottles', quantity: 3, lowStockThreshold: 2 },
+            { id: 'mayo', name: 'Mayonnaise', unit: 'jars', quantity: 4, lowStockThreshold: 2 },
+            { id: 'squash', name: 'Squash', unit: 'bottles', quantity: 2, lowStockThreshold: 2 },
+            { id: 'sweet_chilli', name: 'Sweet Chilli Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
+            { id: 'mayo_sriracha', name: 'Sriracha Mayo', unit: 'bottles', quantity: 2, lowStockThreshold: 2 },
+            { id: 'sriracha', name: 'Sriracha', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
+            { id: 'hp_sauce', name: 'HP Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
+            { id: 'cashew_nuts', name: 'Cashew Nuts', unit: 'bags', quantity: 4, lowStockThreshold: 3 },
+        ];
+
+        const groceryPackages = [
+            { id: 'beans_box', name: 'Beans (Box of 6)', contents: { itemId: 'beans', quantity: 6 } },
+            { id: 'breaded_chicken_pack', name: 'Breaded Chicken (Pack of 4)', contents: { itemId: 'breaded_chicken_breast', quantity: 2 } },
+            { id: 'carrots_pack', name: 'Carrots (1kg bag)', contents: { itemId: 'carrots', quantity: 1 } },
+            { id: 'chicken_breast_pack', name: 'Chicken Breast (Pack of 8)', contents: { itemId: 'chicken_breast', quantity: 8 } },
+            { id: 'chorizo_whole', name: 'Chorizo (Whole Sausage)', contents: { itemId: 'chorizo', quantity: 4 } },
+            { id: 'chunky_fries_1000', name: 'Chunky Fries (1kg bag)', contents: { itemId: 'chunky_fries', quantity: 2 } },
+            { id: 'chunky_fries_1600', name: 'Chunky Fries (1.6kg bag)', contents: { itemId: 'chunky_fries', quantity: 3.2 } },
+            { id: 'crumpets_pack', name: 'Crumpets (Bag of 9)', contents: { itemId: 'crumpets', quantity: 9 } },
+            { id: 'dolmio_jar', name: 'Dolmio Sauce (Jar)', contents: { itemId: 'dolmio_sauce', quantity: 2 } },
+            { id: 'dry_pasta_bag', name: 'Dry Pasta (500g bag)', contents: { itemId: 'dry_pasta', quantity: 2.5 } },
+            { id: 'fresh_pasta_pack', name: 'Fresh Pasta (Full Pack)', contents: { itemId: 'fresh_pasta', quantity: 2 } },
+            { id: 'hash_browns_pack', name: 'Hash Browns (Pack of 16)', contents: { itemId: 'hash_browns', quantity: 4 } },
+            { id: 'lettuce_pack', name: 'Lettuce (Pack of 2 heads)', contents: { itemId: 'lettuce', quantity: 2 } },
+            { id: 'light_flatbread_pack', name: 'Light Flatbread (Pack of 4)', contents: { itemId: 'light_flatbread', quantity: 4 } },
+            { id: 'oranges_pack', name: 'Oranges (Bag of 8)', contents: { itemId: 'oranges', quantity: 8 } },
+            { id: 'peas_pack', name: 'Peas (850g bag)', contents: { itemId: 'peas', quantity: 1 } },
+            { id: 'pork_loin_pack', name: 'Pork Loin (Pack of 8)', contents: { itemId: 'pork_loin', quantity: 4 } },
+            { id: 'salmon_pack', name: 'Salmon Fillets (Bag of 6)', contents: { itemId: 'salmon_fillets', quantity: 3 } },
+            { id: 'sausages_pack', name: 'Sausages (Pack of 8)', contents: { itemId: 'sausages', quantity: 2 } },
+            { id: 'sprouts_pack', name: 'Sprouts (1kg bag)', contents: { itemId: 'sprouts', quantity: 5 } },
+            { id: 'straight_fries_900', name: 'Straight Fries (900g bag)', contents: { itemId: 'straight_fries', quantity: 1.8 } },
+            { id: 'straight_fries_1400', name: 'Straight Fries (1.4kg bag)', contents: { itemId: 'straight_fries', quantity: 2.8 } },
+            { id: 'tortilla_wraps_pack', name: 'Tortilla Wraps (Pack of 8)', contents: { itemId: 'tortilla_wraps', quantity: 2 } },
+        ];
+
+        const meals = [
+            { id: 'no_meal', name: '--- Select Meal ---', ingredients: [] },
+            { id: 'ate_out', name: 'Ate Out / Takeaway', ingredients: [] },
+            { id: 'leftovers', name: 'Leftovers', ingredients: [] },
+            { id: 'orange_breakfast', name: 'Orange', isDynamic: true, dynamicType: 'crumpet', baseIngredients: [{ itemId: 'oranges', quantity: 1 }] },
+            { id: 'toast', name: 'Toast', ingredients: [{ itemId: 'bread_loaf', quantity: 1/18 }] },
+            { id: 'sandwiches_soup', name: 'Sandwiches & Soup', isDynamic: true, dynamicType: 'soup', baseIngredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] },
+            { id: 'wraps', name: 'Wraps', ingredients: [{ itemId: 'lettuce', quantity: 1 }, { itemId: 'breaded_chicken_breast', quantity: 1 }, { itemId: 'tortilla_wraps', quantity: 1 }] },
+            { id: 'weekend_brunch', name: 'Weekend Brunch', ingredients: [{ itemId: 'sausages', quantity: 1 }, { itemId: 'beans', quantity: 1 }, { itemId: 'hash_browns', quantity: 1 }] },
+            { id: 'sandwiches_crisps', name: 'Sandwiches & Crisps', ingredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] },
+            { id: 'pasta_dish', name: 'Pasta Dish', isDynamic: true, dynamicType: 'pasta', baseIngredients: [{ itemId: 'dolmio_sauce', quantity: 1 }] },
+            { id: 'protein_starch_veg', name: 'Protein, Starch & Veg', isDynamic: true, dynamicType: 'psv' },
+            { id: 'spinach_tortellini_dinner', name: 'Spinach Tortellini', ingredients: [{ itemId: 'spinach_tortellini', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }, { itemId: 'light_flatbread', quantity: 1 }] },
+            { id: 'cheese_pizza_fries', name: 'Cheese Pizza & Fries', ingredients: [{ itemId: 'cheese_pizza', quantity: 1 }, { itemId: 'straight_fries', quantity: 1 }] },
+            { id: 'pepperoni_pizza_fries', name: 'Pepperoni Pizza & Fries', ingredients: [{ itemId: 'pepperoni_pizza', quantity: 1 }, { itemId: 'straight_fries', quantity: 1 }] },
+            { id: 'nuggets_fries', name: 'Nuggets & Chunky Fries', ingredients: [{ itemId: 'chicken_nuggets', quantity: 1 }, { itemId: 'chunky_fries', quantity: 1 }] },
+            { id: 'chorizo_tortellini_dinner', name: 'Chorizo Tortellini', ingredients: [{ itemId: 'chorizo_tortellini', quantity: 1 }, { itemId: 'chorizo', quantity: 1 }, { itemId: 'heavy_flatbread', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }] },
+        ];
+        
+        const dynamicOptions = {
+            crumpet: [ { id: 'no_crumpet', name: 'No Crumpet', ingredient: null }, { id: 'with_crumpet', name: 'With Crumpet', ingredient: { itemId: 'crumpets', quantity: 1 } } ],
+            soup: [ { id: 'no_soup', name: '--- Select Soup ---', ingredient: null }, { id: 'fresh_chicken', name: 'Fresh Chicken Soup', ingredient: { itemId: 'fresh_chicken_soup', quantity: 1 } }, { id: 'frozen_chicken', name: 'Frozen Chicken Soup', ingredient: { itemId: 'frozen_chicken_soup', quantity: 1 } }, { id: 'fresh_corn', name: 'Fresh Corn Soup', ingredient: { itemId: 'fresh_corn_soup', quantity: 1 } }, { id: 'frozen_leek', name: 'Frozen Leek Soup', ingredient: { itemId: 'frozen_leek_soup', quantity: 1 } } ],
+            pastaProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'salmon', name: 'Salmon', ingredient: { itemId: 'salmon_fillets', quantity: 1 } }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ],
+            pastaCarb: [ { id: 'no_carb', name: '--- Pasta Type ---', ingredient: null }, { id: 'dry', name: 'Dry Pasta', ingredient: { itemId: 'dry_pasta', quantity: 1 } }, { id: 'chorizo_tort', name: 'Chorizo Tortellini', ingredient: { itemId: 'chorizo_tortellini', quantity: 1 } }, { id: 'spinach_tort', name: 'Spinach Tortellini', ingredient: { itemId: 'spinach_tortellini', quantity: 1 } }, { id: 'fresh', name: 'Fresh Pasta', ingredient: { itemId: 'fresh_pasta', quantity: 1 } }, { id: 'gnocchi', name: 'Gnocchi', ingredient: { itemId: 'gnocchi', quantity: 1 } } ],
+            psvProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ],
+            psvStarch: [ { id: 'no_starch', name: '--- Starch ---', ingredient: null }, { id: 'potatoes', name: 'Potatoes', ingredient: { itemId: 'potatoes', quantity: 0.5 } }, { id: 'rice', name: 'Rice', ingredient: { itemId: 'rice', quantity: 0.165 } } ],
+            psvVeg: [ { id: 'no_veg', name: '--- Veg ---', ingredient: null }, { id: 'peas', name: 'Peas', ingredient: { itemId: 'peas', quantity: 200/850 } }, { id: 'sprouts', name: 'Sprouts', ingredient: { itemId: 'sprouts', quantity: 1 } }, { id: 'carrots', name: 'Carrots', ingredient: { itemId: 'carrots', quantity: 0.2 } } ]
+        };
+
+        const defaultWeeklyPlan = {
+            breakfast_j: ['orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast'],
+            breakfast_t: ['toast', 'toast', 'toast', 'toast', 'toast', 'toast', 'toast'],
+            lunch: ['sandwiches_crisps', 'sandwiches_soup', 'sandwiches_soup', 'wraps', 'sandwiches_soup', 'wraps', 'sandwiches_soup'],
+            dinner: ['chorizo_tortellini_dinner', 'pasta_dish', 'protein_starch_veg', 'spinach_tortellini_dinner', 'protein_starch_veg', 'cheese_pizza_fries', 'nuggets_fries'],
+        };
+        
+        let mealPlanState = {};
+        let currentDate = new Date();
+        let trueToday = new Date(); 
+        let isPaused = false;
+
+        // --- SCRIPT EXECUTION STARTS HERE ---
+        function saveState() {
+            localStorage.setItem('groceryTrackerPantry', JSON.stringify(initialPantry));
+            localStorage.setItem('groceryTrackerMealPlan', JSON.stringify(mealPlanState));
+            localStorage.setItem('groceryTrackerLastOpened', getDateKey(trueToday));
+            localStorage.setItem('groceryTrackerIsPaused', JSON.stringify(isPaused));
+        }
+
+        function loadState() {
+            const savedPantry = localStorage.getItem('groceryTrackerPantry');
+            const savedMealPlan = localStorage.getItem('groceryTrackerMealPlan');
+            const lastOpened = localStorage.getItem('groceryTrackerLastOpened');
+            const savedIsPaused = localStorage.getItem('groceryTrackerIsPaused');
+            
+            if (savedPantry) initialPantry = JSON.parse(savedPantry);
+            if (savedMealPlan) mealPlanState = JSON.parse(savedMealPlan);
+            else initializeMealPlanState();
+            
+            if(savedIsPaused) isPaused = JSON.parse(savedIsPaused);
+
+            if (lastOpened && !isPaused) {
+                catchUpPantry(lastOpened);
+            }
+        }
+
+        function getDateKey(date) { return date.toISOString().split('T')[0]; }
+
+        function initializeMealPlanState() {
+            const today = new Date();
+            for (let i = -14; i < 365; i++) {
+                const date = new Date(today);
+                date.setDate(today.getDate() + i);
+                const dayOfWeek = date.getDay(); // Sunday: 0, Monday: 1, etc.
+                const dateKey = getDateKey(date);
+                if (mealPlanState[dateKey]) continue;
+
+                const weekNumber = Math.floor(i / 7);
+                let dinnerMealId = defaultWeeklyPlan.dinner[dayOfWeek];
+                if (dinnerMealId === 'cheese_pizza_fries' && weekNumber % 2 !== 0) {
+                    dinnerMealId = 'pepperoni_pizza_fries';
+                }
+                const lunchMealId = defaultWeeklyPlan.lunch[dayOfWeek];
+                const breakfastJMealId = defaultWeeklyPlan.breakfast_j[dayOfWeek];
+
+                mealPlanState[dateKey] = {
+                    breakfast_j: { mealId: breakfastJMealId || 'no_meal' },
+                    breakfast_t: { mealId: defaultWeeklyPlan.breakfast_t[dayOfWeek] || 'no_meal' },
+                    lunch: { mealId: lunchMealId || 'no_meal' },
+                    dinner: { mealId: dinnerMealId || 'no_meal' },
+                };
+                
+                const crumpetDays = [0, 1, 2, 4, 6]; // Sun, Mon, Tue, Thu, Sat
+                if (breakfastJMealId === 'orange_breakfast' && crumpetDays.includes(dayOfWeek)) {
+                    mealPlanState[dateKey].breakfast_j.dynamicChoice = 'with_crumpet';
+                }
+
+                if (lunchMealId === 'sandwiches_soup') {
+                    if (dayOfWeek === 1 || dayOfWeek === 4) { mealPlanState[dateKey].lunch.dynamicChoice = 'fresh_chicken'; } 
+                    else if (dayOfWeek === 2 || dayOfWeek === 6) { mealPlanState[dateKey].lunch.dynamicChoice = 'fresh_corn'; }
+                }
+
+                if (dinnerMealId === 'pasta_dish' && dayOfWeek === 1) { // Monday
+                    mealPlanState[dateKey].dinner.proteinChoice = 'salmon';
+                    mealPlanState[dateKey].dinner.carbChoice = 'dry';
+                }
+
+                if (dinnerMealId === 'protein_starch_veg') {
+                    if (dayOfWeek === 2) { // Tuesday
+                        mealPlanState[dateKey].dinner.psvProteinChoice = 'chicken';
+                        mealPlanState[dateKey].dinner.psvStarchChoice = 'potatoes';
+                        mealPlanState[dateKey].dinner.psvVegChoice = 'peas';
+                    } else if (dayOfWeek === 4) { // Thursday
+                        mealPlanState[dateKey].dinner.psvProteinChoice = 'pork';
+                        mealPlanState[dateKey].dinner.psvStarchChoice = 'rice';
+                        mealPlanState[dateKey].dinner.psvVegChoice = 'carrots';
+                    }
+                }
+            }
+        }
+        
+        function catchUpPantry(lastOpenedDateKey) {
+            const todayKey = getDateKey(trueToday);
+            const pantryMap = new Map(initialPantry.map(item => [item.id, item]));
+
+            const sortedDateKeys = Object.keys(mealPlanState).sort();
+
+            for (const dateKey of sortedDateKeys) {
+                if (dateKey >= lastOpenedDateKey && dateKey < todayKey) {
+                    const dayPlan = mealPlanState[dateKey];
+                    Object.values(dayPlan).forEach(planItem => {
+                        const meal = meals.find(m => m.id === planItem.mealId);
+                        if (!meal) return;
+                        let ingredientsToSubtract = meal.baseIngredients ? [...meal.baseIngredients] : (meal.ingredients ? [...meal.ingredients] : []);
+                        if (meal.isDynamic) {
+                             const addIngredient = (optionType, choiceKey) => {
+                                if (planItem[choiceKey] && dynamicOptions[optionType]) {
+                                    const choice = dynamicOptions[optionType].find(c => c.id === planItem[choiceKey]);
+                                    if (choice && choice.ingredient) ingredientsToSubtract.push(choice.ingredient);
+                                }
+                            };
+                            if (meal.dynamicType === 'pasta') {
+                                addIngredient('pastaProtein', 'proteinChoice');
+                                addIngredient('pastaCarb', 'carbChoice');
+                            } else if (meal.dynamicType === 'psv') {
+                                addIngredient('psvProtein', 'psvProteinChoice');
+                                addIngredient('psvStarch', 'psvStarchChoice');
+                                addIngredient('psvVeg', 'psvVegChoice');
+                            } else {
+                                addIngredient(meal.dynamicType, 'dynamicChoice');
+                            }
+                        }
+                        ingredientsToSubtract.forEach(ing => {
+                            if (pantryMap.has(ing.itemId)) {
+                                const item = pantryMap.get(ing.itemId);
+                                item.quantity = Math.max(0, item.quantity - ing.quantity);
+                            }
+                        });
+                    });
+                }
+            }
+            initialPantry.forEach(item => {
+                item.quantity = pantryMap.get(item.id).quantity;
+            });
+        }
+
+        function getPantryStateForDate(simulatedDate) {
+            const simulatedDateKey = getDateKey(simulatedDate);
+            const trueTodayKey = getDateKey(trueToday);
+            
+            let currentPantry = JSON.parse(JSON.stringify(initialPantry));
+            
+            if (simulatedDateKey > trueTodayKey) {
+                const pantryMap = new Map(currentPantry.map(item => [item.id, item]));
+                const sortedDateKeys = Object.keys(mealPlanState).sort();
+
+                for (const dateKey of sortedDateKeys) {
+                    if (dateKey >= trueTodayKey && dateKey < simulatedDateKey) {
+                        const dayPlan = mealPlanState[dateKey];
+                        Object.values(dayPlan).forEach(planItem => {
+                            const meal = meals.find(m => m.id === planItem.mealId);
+                            if (!meal) return;
+                            let ingredientsToSubtract = meal.baseIngredients ? [...meal.baseIngredients] : (meal.ingredients ? [...meal.ingredients] : []);
+                            if (meal.isDynamic) {
+                                const addIngredient = (optionType, choiceKey) => {
+                                    if (planItem[choiceKey] && dynamicOptions[optionType]) {
+                                        const choice = dynamicOptions[optionType].find(c => c.id === planItem[choiceKey]);
+                                        if (choice && choice.ingredient) ingredientsToSubtract.push(choice.ingredient);
+                                    }
+                                };
+                                if (meal.dynamicType === 'pasta') {
+                                    addIngredient('pastaProtein', 'proteinChoice');
+                                    addIngredient('pastaCarb', 'carbChoice');
+                                } else if (meal.dynamicType === 'psv') {
+                                    addIngredient('psvProtein', 'psvProteinChoice');
+                                    addIngredient('psvStarch', 'psvStarchChoice');
+                                    addIngredient('psvVeg', 'psvVegChoice');
+                                } else {
+                                    addIngredient(meal.dynamicType, 'dynamicChoice');
+                                }
+                            }
+                            ingredientsToSubtract.forEach(ing => {
+                                if (pantryMap.has(ing.itemId)) {
+                                    const item = pantryMap.get(ing.itemId);
+                                    item.quantity = Math.max(0, item.quantity - ing.quantity);
+                                }
+                            });
+                        });
+                    }
+                }
+                 currentPantry.forEach(item => {
+                    item.quantity = pantryMap.get(item.id).quantity;
+                });
+            }
+            return currentPantry;
+        }
+        
+        function calculateProjectedUsage(simulatedDate) {
+            if (isPaused) return {};
+            const required = {};
+            const today = simulatedDate; 
+            const anchor = new Date('2025-09-16T00:00:00');
+            
+            let nextDelivery = new Date(anchor);
+            while (nextDelivery <= today) {
+                nextDelivery.setDate(nextDelivery.getDate() + 14);
+            }
+            let deliveryAfterNext = new Date(nextDelivery);
+            deliveryAfterNext.setDate(deliveryAfterNext.getDate() + 14);
+
+            const daysToForecast = Math.ceil((deliveryAfterNext - today) / (1000 * 60 * 60 * 24));
+
+            for (let i = 0; i < daysToForecast; i++) {
+                const date = new Date(today); 
+                date.setDate(date.getDate() + i);
+                const dayOfWeek = date.getDay();
+                const weekNumber = Math.floor(date.getTime() / (1000 * 60 * 60 * 24 * 7));
+                const plan = defaultWeeklyPlan;
+                const mealIds = {
+                    breakfast_j: plan.breakfast_j[dayOfWeek],
+                    breakfast_t: plan.breakfast_t[dayOfWeek],
+                    lunch: plan.lunch[dayOfWeek],
+                    dinner: plan.dinner[dayOfWeek]
+                };
+                if (mealIds.dinner === 'cheese_pizza_fries' && weekNumber % 2 !== 0) mealIds.dinner = 'pepperoni_pizza_fries';
+                Object.values(mealIds).forEach(mealId => {
+                    const meal = meals.find(m => m.id === mealId);
+                    if (!meal) return;
+                    let allIngredients = meal.baseIngredients ? [...meal.baseIngredients] : (meal.ingredients ? [...meal.ingredients] : []);
+                    if (meal.isDynamic) {
+                        if (meal.dynamicType === 'soup') {
+                            let soupChoiceId = 'fresh_chicken';
+                            if (dayOfWeek === 2 || dayOfWeek === 6) { soupChoiceId = 'fresh_corn'; }
+                            const soupChoice = dynamicOptions.soup.find(s => s.id === soupChoiceId);
+                            if (soupChoice && soupChoice.ingredient) allIngredients.push(soupChoice.ingredient);
+                        }
+                        else if (meal.dynamicType === 'crumpet') {
+                            const crumpetDays = [0, 1, 2, 4, 6];
+                            if (crumpetDays.includes(dayOfWeek)) {
+                                allIngredients.push(dynamicOptions.crumpet[1].ingredient);
+                            }
+                        }
+                        else if (meal.dynamicType === 'pasta') {
+                           if (dayOfWeek === 1) {
+                               allIngredients.push(dynamicOptions.pastaProtein.find(p => p.id === 'salmon').ingredient);
+                               allIngredients.push(dynamicOptions.pastaCarb.find(p => p.id === 'dry').ingredient);
+                           } else {
+                               allIngredients.push(dynamicOptions.pastaProtein[1].ingredient);
+                               allIngredients.push(dynamicOptions.pastaCarb[1].ingredient);
+                           }
+                        }
+                        else if (meal.dynamicType === 'psv') {
+                           if(dayOfWeek === 2){
+                                allIngredients.push(dynamicOptions.psvProtein.find(p=>p.id==='chicken').ingredient);
+                                allIngredients.push(dynamicOptions.psvStarch.find(p=>p.id==='potatoes').ingredient);
+                                allIngredients.push(dynamicOptions.psvVeg.find(p=>p.id==='peas').ingredient);
+                           } else {
+                                allIngredients.push(dynamicOptions.psvProtein.find(p=>p.id==='pork').ingredient);
+                                allIngredients.push(dynamicOptions.psvStarch.find(p=>p.id==='rice').ingredient);
+                                allIngredients.push(dynamicOptions.psvVeg.find(p=>p.id==='carrots').ingredient);
+                           }
+                        }
+                    }
+                    allIngredients.forEach(ing => {
+                        if (ing) required[ing.itemId] = (required[ing.itemId] || 0) + ing.quantity;
+                    });
+                });
+            }
+            return required;
+        }
+
+        function masterUpdate() {
+            const currentPantry = getPantryStateForDate(currentDate);
+            const projectedUsage = calculateProjectedUsage(currentDate);
+            currentPantry.forEach(item => {
+                const requiredAmount = projectedUsage[item.id] || 0;
+                if (item.lowStockThreshold) {
+                    item.isLow = item.quantity < item.lowStockThreshold;
+                } else {
+                    if (item.quantity <= 0) {
+                        item.isLow = true;
+                    } else {
+                        item.isLow = item.quantity < requiredAmount;
+                    }
+                }
+            });
+            renderPantry(currentPantry);
+            
+            const lowStockLabel = document.getElementById('low-stock-label');
+            const hasLowStock = currentPantry.some(item => item.isLow);
+            if (lowStockLabel) {
+                lowStockLabel.style.display = hasLowStock ? 'inline' : 'none';
+            }
+
+            saveState();
+        }
+
+        function renderPantry(pantryData) {
+            const pantryList = document.getElementById('pantry-list');
+            pantryList.innerHTML = '';
+            const lowStockItems = pantryData.filter(item => item.isLow).sort((a, b) => a.name.localeCompare(b.name));
+            const normalStockItems = pantryData.filter(item => !item.isLow).sort((a, b) => a.name.localeCompare(b.name));
+            const sortedPantry = [...lowStockItems, ...normalStockItems];
+            sortedPantry.forEach(item => {
+                const itemElement = document.createElement('div');
+                itemElement.className = `flex justify-between items-center p-2 rounded-md ${item.isLow ? 'bg-red-100 border border-red-200 text-red-800' : 'odd:bg-gray-50'}`;
+                itemElement.innerHTML = `
+                    <div class="flex items-center">
+                        <button class="remove-one-btn text-red-500 hover:text-red-700 font-bold px-2" data-itemid="${item.id}">-</button>
+                        <button class="add-one-btn text-green-600 hover:text-green-800 font-bold px-2" data-itemid="${item.id}">+</button>
+                        <span class="ml-2">${item.isLow ? '⚠️ ' : ''}${item.name}</span>
+                    </div>
+                    <span class="font-semibold bg-gray-200 px-2 py-1 text-sm rounded-full text-gray-700">${Number(item.quantity.toFixed(2))} ${item.unit}</span>`;
+                pantryList.appendChild(itemElement);
+            });
+        }
+        
+        function renderPlanner(displayDate) {
+            const plannerGrid = document.getElementById('planner-grid');
+            plannerGrid.innerHTML = '';
+            const dates = { Yesterday: new Date(displayDate), Today: displayDate, Tomorrow: new Date(displayDate) };
+            dates.Yesterday.setDate(displayDate.getDate() - 1);
+            dates.Tomorrow.setDate(displayDate.getDate() + 1);
+            const isViewingRealToday = getDateKey(displayDate) === getDateKey(trueToday);
+            Object.entries(dates).forEach(([dayName, date]) => {
+                const dateKey = getDateKey(date);
+                const dayPlan = mealPlanState[dateKey] || {};
+                const isInteractiveDay = dayName === 'Today';
+                const dayElement = document.createElement('div');
+                let bgColor = 'bg-gray-50';
+                if(isInteractiveDay) { bgColor = isViewingRealToday ? 'bg-blue-50 border border-blue-200' : 'bg-yellow-50 border border-yellow-200'; }
+                dayElement.className = `p-4 rounded-lg ${bgColor}`;
+                let mealSlotsHTML = '';
+                ['breakfast_j', 'breakfast_t', 'lunch', 'dinner'].forEach(mealType => {
+                    const planItem = dayPlan[mealType] || {};
+                    const mealId = planItem.mealId || 'no_meal';
+                    const meal = meals.find(m => m.id === mealId);
+                    let labelText = mealType.replace('_', ' ');
+                    if (mealType === 'breakfast_j') labelText = 'Breakfast J';
+                    if (mealType === 'breakfast_t') labelText = 'Breakfast T';
+
+                    if (isInteractiveDay) {
+                        mealSlotsHTML += `<div class="meal-slot relative flex-grow">
+                            <label class="font-semibold capitalize">${labelText}</label>
+                            <select data-date="${dateKey}" data-meal="${mealType}" class="meal-select w-full mt-1 p-2 border rounded-md">
+                                ${meals.map(m => `<option value="${m.id}" ${m.id === mealId ? 'selected' : ''}>${m.name}</option>`).join('')}
+                            </select>
+                        </div>`;
+                    } else {
+                        mealSlotsHTML += `<div><strong class="capitalize">${labelText}:</strong> <span>${meal ? meal.name : 'N/A'}</span></div>`;
+                    }
+                });
+                dayElement.innerHTML = `<h3 class="text-lg font-bold ${isInteractiveDay && isViewingRealToday ? 'text-blue-800' : (isInteractiveDay ? 'text-yellow-800' : '')}">${dayName} <span class="font-normal text-gray-500 text-sm">- ${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span></h3>
+                                      <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">${mealSlotsHTML}</div>`;
+                plannerGrid.appendChild(dayElement);
+                if (isInteractiveDay) {
+                    Object.entries(dayPlan).forEach(([mealType, planItem]) => {
+                        const meal = meals.find(m => m.id === planItem.mealId);
+                        if (meal && meal.isDynamic) {
+                            const parentSlot = dayElement.querySelector(`select[data-meal="${mealType}"]`).closest('.meal-slot');
+                            const createSelector = (optionType, choiceKey, defaultId) => {
+                                const currentId = planItem[choiceKey] || defaultId;
+                                const selector = document.createElement('select');
+                                selector.className = 'dynamic-select w-full mt-1 p-2 border rounded-md bg-blue-50';
+                                selector.dataset.date = dateKey; selector.dataset.meal = mealType; selector.dataset.type = choiceKey;
+                                selector.innerHTML = dynamicOptions[optionType].map(p => `<option value="${p.id}" ${p.id === currentId ? 'selected' : ''}>${p.name}</option>`).join('');
+                                parentSlot.appendChild(selector);
+                            };
+                            if (meal.dynamicType === 'pasta') {
+                                createSelector('pastaProtein', 'proteinChoice', 'no_protein');
+                                createSelector('pastaCarb', 'carbChoice', 'no_carb');
+                            } else if (meal.dynamicType === 'psv') {
+                                createSelector('psvProtein', 'psvProteinChoice', 'no_protein');
+                                createSelector('psvStarch', 'psvStarchChoice', 'no_starch');
+                                createSelector('psvVeg', 'psvVegChoice', 'no_veg');
+                            } else {
+                                createSelector(meal.dynamicType, 'dynamicChoice', `no_${meal.dynamicType}`);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        function renderGroceryForm() {
+            const select = document.getElementById('add-grocery-select');
+            const packageOnlyIds = groceryPackages.map(pkg => pkg.contents.itemId);
+            const addableItems = [
+                ...groceryPackages.map(pkg => ({ id: pkg.id, name: pkg.name, type: 'package' })),
+                ...initialPantry
+                    .filter(item => !packageOnlyIds.includes(item.id))
+                    .map(item => ({ id: item.id, name: `${item.name} (Single ${item.unit})`, type: 'single' }))
+            ];
+            addableItems.sort((a, b) => a.name.localeCompare(b.name));
+            select.innerHTML = '<option value="">-- Select an item --</option>';
+            addableItems.forEach(item => {
+                select.innerHTML += `<option value="${item.id}" data-type="${item.type}">${item.name}</option>`;
+            });
+        }
+
+        function renderSetStockForm() {
+            const select = document.getElementById('set-stock-select');
+            const unitSelect = document.getElementById('set-stock-unit-select');
+            const items = [...initialPantry].sort((a, b) => a.name.localeCompare(b.name));
+            select.innerHTML = '<option value="">-- Select an item --</option>';
+            items.forEach(item => {
+                select.innerHTML += `<option value="${item.id}">${item.name}</option>`;
+            });
+            unitSelect.innerHTML = '<option value="">--</option>';
+        }
+        
+        function setupEventListeners() {
+            document.getElementById('pantry-list').addEventListener('click', (event) => {
+                const target = event.target;
+                const itemId = target.dataset.itemid;
+                if (target.classList.contains('remove-one-btn')) {
+                    const pantryItem = initialPantry.find(p => p.id === itemId);
+                    if (pantryItem) {
+                        pantryItem.quantity = Math.max(0, pantryItem.quantity - 1);
+                        masterUpdate();
+                    }
+                } else if (target.classList.contains('add-one-btn')) {
+                    const pantryItem = initialPantry.find(p => p.id === itemId);
+                    if (pantryItem) {
+                        pantryItem.quantity += 1;
+                        masterUpdate();
+                    }
+                }
+            });
+
+            document.getElementById('planner-grid').addEventListener('change', (event) => {
+                const target = event.target;
+                if (target.matches('select')) {
+                    const { date, meal, type } = target.dataset;
+                    if (!mealPlanState[date]) mealPlanState[date] = {};
+                    if (!mealPlanState[date][meal]) mealPlanState[date][meal] = {};
+                    if (target.classList.contains('meal-select')) {
+                        mealPlanState[date][meal] = { mealId: target.value };
+                        const newMeal = meals.find(m => m.id === target.value);
+                        if (newMeal && newMeal.isDynamic && newMeal.dynamicType === 'psv') {
+                            const dayOfWeek = new Date(date).getDay();
+                             if (dayOfWeek === 2) {
+                                mealPlanState[date][meal].psvProteinChoice = 'chicken';
+                                mealPlanState[date][meal].psvStarchChoice = 'potatoes';
+                                mealPlanState[date][meal].psvVegChoice = 'peas';
+                            } else if (dayOfWeek === 4) {
+                                mealPlanState[date][meal].psvProteinChoice = 'pork';
+                                mealPlanState[date][meal].psvStarchChoice = 'rice';
+                                mealPlanState[date][meal].psvVegChoice = 'carrots';
+                            }
+                        } else if (newMeal && newMeal.isDynamic && newMeal.dynamicType === 'soup') {
+                            const dayOfWeek = new Date(date).getDay();
+                            if (dayOfWeek === 1 || dayOfWeek === 4) { mealPlanState[date][meal].dynamicChoice = 'fresh_chicken';} 
+                            else if (dayOfWeek === 2 || dayOfWeek === 6) { mealPlanState[date][meal].dynamicChoice = 'fresh_corn';}
+                        }
+                        renderPlanner(currentDate); 
+                    } else if (target.classList.contains('dynamic-select')) {
+                        mealPlanState[date][meal][type] = target.value;
+                    }
+                    masterUpdate();
+                }
+            });
+
+            document.getElementById('add-groceries-form').addEventListener('submit', (event) => {
+                event.preventDefault();
+                const select = document.getElementById('add-grocery-select');
+                const quantityInput = document.getElementById('add-grocery-quantity');
+                const selectedOption = select.options[select.selectedIndex];
+                const itemId = select.value;
+                const itemType = selectedOption.dataset.type;
+                const quantity = parseFloat(quantityInput.value);
+
+                if (itemId && quantity > 0) {
+                    if (itemType === 'package') {
+                        const pkg = groceryPackages.find(p => p.id === itemId);
+                        if (pkg) {
+                            const pantryItem = initialPantry.find(p => p.id === pkg.contents.itemId);
+                            if (pantryItem) {
+                                pantryItem.quantity += pkg.contents.quantity * quantity;
+                            }
+                        }
+                    } else {
+                        const pantryItem = initialPantry.find(p => p.id === itemId);
+                        if (pantryItem) pantryItem.quantity += quantity;
+                    }
+                    masterUpdate();
+                    select.value = "";
+                    quantityInput.value = "";
+                }
+            });
+            
+            document.getElementById('set-stock-select').addEventListener('change', (event) => {
+                const itemId = event.target.value;
+                const unitSelect = document.getElementById('set-stock-unit-select');
+                unitSelect.innerHTML = '';
+
+                if (!itemId) {
+                    unitSelect.innerHTML = '<option value="">--</option>';
+                    return;
+                }
+
+                const pantryItem = initialPantry.find(p => p.id === itemId);
+                unitSelect.innerHTML = `<option value="${pantryItem.unit}">${pantryItem.unit}</option>`;
+
+                groceryPackages.forEach(pkg => {
+                    if (pkg.contents.itemId === itemId) {
+                        unitSelect.innerHTML += `<option value="${pkg.id}">${pkg.name}</option>`;
+                    }
+                });
+            });
+
+             document.getElementById('set-stock-form').addEventListener('submit', (event) => {
+                event.preventDefault();
+                const itemSelect = document.getElementById('set-stock-select');
+                const quantityInput = document.getElementById('set-stock-quantity');
+                const unitSelect = document.getElementById('set-stock-unit-select');
+                const itemId = itemSelect.value;
+                const quantity = parseFloat(quantityInput.value);
+                const unitId = unitSelect.value;
+                
+                if (itemId && quantity >= 0) {
+                    const pantryItem = initialPantry.find(p => p.id === itemId);
+                    const pkg = groceryPackages.find(p => p.id === unitId);
+                    
+                    if (pantryItem) {
+                        if(pkg) { // It's a package
+                             pantryItem.quantity = pkg.contents.quantity * quantity;
+                        } else { // It's a base unit
+                             pantryItem.quantity = quantity;
+                        }
+                    }
+                    masterUpdate();
+                    itemSelect.value = "";
+                    quantityInput.value = "";
+                    unitSelect.innerHTML = '<option value="">--</option>';
+                }
+            });
+            
+            document.getElementById('reset-stock-btn').addEventListener('click', () => {
+                const itemSelect = document.getElementById('set-stock-select');
+                const itemId = itemSelect.value;
+                if(itemId) {
+                    const pantryItem = initialPantry.find(p => p.id === itemId);
+                    if(pantryItem) {
+                        pantryItem.quantity = 0;
+                        masterUpdate();
+                    }
+                }
+            });
+
+            document.getElementById('prev-day-btn').addEventListener('click', () => { 
+                currentDate.setDate(currentDate.getDate() - 1); 
+                renderPlanner(currentDate); 
+                masterUpdate(); 
+            });
+            document.getElementById('next-day-btn').addEventListener('click', () => { 
+                currentDate.setDate(currentDate.getDate() + 1); 
+                renderPlanner(currentDate); 
+                masterUpdate(); 
+            });
+            
+            document.getElementById('pause-btn').addEventListener('click', () => {
+                isPaused = !isPaused; // Toggle the state
+                const pauseBtn = document.getElementById('pause-btn');
+
+                if (isPaused) {
+                    pauseBtn.textContent = 'Resume Tracker';
+                    pauseBtn.classList.remove('bg-orange-500', 'hover:bg-orange-600');
+                    pauseBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+                } else {
+                    localStorage.setItem('groceryTrackerLastOpened', getDateKey(trueToday));
+                    pauseBtn.textContent = 'Pause Tracker';
+                    pauseBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+                    pauseBtn.classList.add('bg-orange-500', 'hover:bg-orange-600');
+                }
+                masterUpdate(); 
+            });
+        }
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("Tracker Initialized!");
+            loadState();
+            currentDate = new Date();
+            trueToday = new Date();
+            
+            const pauseBtn = document.getElementById('pause-btn');
+            if (isPaused) {
+                pauseBtn.textContent = 'Resume Tracker';
+                pauseBtn.classList.remove('bg-orange-500', 'hover:bg-orange-600');
+                pauseBtn.classList.add('bg-green-500', 'hover:bg-green-600');
+            }
+            
+            renderPlanner(currentDate);
+            renderGroceryForm();
+            renderSetStockForm();
+            setupEventListeners();
+            masterUpdate();
+        });
+    </script>
+</body>
+</html>
+
