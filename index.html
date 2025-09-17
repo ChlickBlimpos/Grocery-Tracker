@@ -831,19 +831,28 @@
             const logoutBtn = document.getElementById('logout-btn');
             const auth = window.auth;
 
-            loginBtn.addEventListener('click', () => {
-                const provider = new window.authFunctions.GoogleAuthProvider();
-                window.authFunctions.signInWithPopup(auth, provider).catch(error => {
-                    console.error("Login failed:", error);
+            if(loginBtn) {
+                loginBtn.addEventListener('click', () => {
+                    const provider = new window.authFunctions.GoogleAuthProvider();
+                    window.authFunctions.signInWithPopup(auth, provider).catch(error => {
+                        console.error("Login failed:", error);
+                    });
                 });
-            });
+            }
 
-            logoutBtn.addEventListener('click', () => {
-                window.authFunctions.signOut(auth);
-            });
+            if(logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    window.authFunctions.signOut(auth);
+                });
+            }
             
-            setupEventListeners();
-            window.authFunctions.onAuthStateChanged(auth, handleAuthState);
+            onAuthStateChanged(auth, (user) => {
+                handleAuthState(user);
+                if (user) {
+                    // **FIX**: Only setup main app listeners AFTER user is logged in
+                    setupEventListeners();
+                }
+            });
         });
     </script>
 </body>
