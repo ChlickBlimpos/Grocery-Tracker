@@ -62,13 +62,14 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-4xl font-bold text-gray-900">Household Grocery Tracker</h1>
-                    <p class="text-gray-600">V3.1 - Secure & Cloud Synced</p>
+                    <p class="text-gray-600">V3.2 - Smart Alerts</p>
                 </div>
                 <div class="flex items-center">
                     <div id="user-profile" class="text-right mr-4 hidden">
                         <p id="user-name" class="font-semibold"></p>
                         <p id="user-email" class="text-sm text-gray-500"></p>
                     </div>
+                    <button id="reset-today-btn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition-colors mr-2">Reset Today</button>
                     <button id="pause-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg transition-colors mr-2">Pause</button>
                     <button id="logout-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Sign Out</button>
                 </div>
@@ -89,7 +90,7 @@
             <aside class="space-y-8">
                 <section id="shopping-list-section" class="bg-white p-6 rounded-lg shadow-md hidden">
                      <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛒 Shopping List</h2>
-                     <ul id="shopping-list" class="list-disc list-inside space-y-1"></ul>
+                     <ul id="shopping-list" class="space-y-2"></ul>
                 </section>
                 <section id="pantry-view" class="bg-white p-6 rounded-lg shadow-md">
                     <div class="flex justify-between items-center border-b pb-2 mb-4">
@@ -139,6 +140,7 @@
         let trueToday = new Date(); 
         let isPaused = false;
         let unsubscribe; 
+        let pantryAtStartOfDay = [];
 
         // --- SCRIPT EXECUTION STARTS HERE ---
         const dataRef = doc(window.db, "trackerData", "appData");
@@ -183,6 +185,7 @@
                     saveState();
                 }
                 
+                pantryAtStartOfDay = JSON.parse(JSON.stringify(initialPantry));
                 updateUIOnLoad();
             });
         }
@@ -331,34 +334,21 @@
             return currentPantry;
         }
         
-        function calculateProjectedUsage(simulatedDate) {
-            if (isPaused) return {};
-            const required = {};
-            const today = simulatedDate; 
-            const anchor = new Date('2025-09-16T00:00:00');
-            
-            let nextDelivery = new Date(anchor);
-            while (nextDelivery <= today) {
-                nextDelivery.setDate(nextDelivery.getDate() + 14);
-            }
-            let deliveryAfterNext = new Date(nextDelivery);
-            deliveryAfterNext.setDate(deliveryAfterNext.getDate() + 14);
+        function calculateRunOutDates(pantry) {
+            let tempPantry = new Map(pantry.map(item => [item.id, item.quantity]));
+            const runOutDates = new Map();
 
-            const daysToForecast = Math.ceil((deliveryAfterNext - today) / (1000 * 60 * 60 * 24));
-
-            for (let i = 0; i < daysToForecast; i++) {
-                const date = new Date(today); 
-                date.setDate(date.getDate() + i);
+            for (let i = 0; i < 60; i++) { // Forecast 60 days ahead
+                const date = new Date(currentDate);
+                date.setDate(currentDate.getDate() + i);
                 const dayOfWeek = date.getDay();
+                const dateKey = getDateKey(date);
                 const weekNumber = Math.floor(date.getTime() / (1000 * 60 * 60 * 24 * 7));
+                
                 const plan = defaultWeeklyPlan;
-                const mealIds = {
-                    breakfast_j: plan.breakfast_j[dayOfWeek],
-                    breakfast_t: plan.breakfast_t[dayOfWeek],
-                    lunch: plan.lunch[dayOfWeek],
-                    dinner: plan.dinner[dayOfWeek]
-                };
+                const mealIds = { breakfast_j: plan.breakfast_j[dayOfWeek], breakfast_t: plan.breakfast_t[dayOfWeek], lunch: plan.lunch[dayOfWeek], dinner: plan.dinner[dayOfWeek] };
                 if (mealIds.dinner === 'cheese_pizza_fries' && weekNumber % 2 !== 0) mealIds.dinner = 'pepperoni_pizza_fries';
+
                 Object.values(mealIds).forEach(mealId => {
                     const meal = meals.find(m => m.id === mealId);
                     if (!meal) return;
@@ -369,14 +359,10 @@
                             if (dayOfWeek === 2 || dayOfWeek === 6) { soupChoiceId = 'fresh_corn'; }
                             const soupChoice = dynamicOptions.soup.find(s => s.id === soupChoiceId);
                             if (soupChoice && soupChoice.ingredient) allIngredients.push(soupChoice.ingredient);
-                        }
-                        else if (meal.dynamicType === 'crumpet') {
+                        } else if (meal.dynamicType === 'crumpet') {
                             const crumpetDays = [0, 1, 2, 4, 6];
-                            if (crumpetDays.includes(dayOfWeek)) {
-                                allIngredients.push(dynamicOptions.crumpet[1].ingredient);
-                            }
-                        }
-                        else if (meal.dynamicType === 'pasta') {
+                            if (crumpetDays.includes(dayOfWeek)) { allIngredients.push(dynamicOptions.crumpet[1].ingredient); }
+                        } else if (meal.dynamicType === 'pasta') {
                            if (dayOfWeek === 1) {
                                allIngredients.push(dynamicOptions.pastaProtein.find(p => p.id === 'salmon').ingredient);
                                allIngredients.push(dynamicOptions.pastaCarb.find(p => p.id === 'dry').ingredient);
@@ -384,9 +370,8 @@
                                allIngredients.push(dynamicOptions.pastaProtein[1].ingredient);
                                allIngredients.push(dynamicOptions.pastaCarb[1].ingredient);
                            }
-                        }
-                        else if (meal.dynamicType === 'psv') {
-                           if(dayOfWeek === 2){
+                        } else if (meal.dynamicType === 'psv') {
+                           if(dayOfWeek === 2) {
                                 allIngredients.push(dynamicOptions.psvProtein.find(p=>p.id==='chicken').ingredient);
                                 allIngredients.push(dynamicOptions.psvStarch.find(p=>p.id==='potatoes').ingredient);
                                 allIngredients.push(dynamicOptions.psvVeg.find(p=>p.id==='peas').ingredient);
@@ -398,33 +383,55 @@
                         }
                     }
                     allIngredients.forEach(ing => {
-                        if (ing) required[ing.itemId] = (required[ing.itemId] || 0) + ing.quantity;
+                        if (ing && tempPantry.has(ing.itemId) && !runOutDates.has(ing.itemId)) {
+                            let currentQty = tempPantry.get(ing.itemId);
+                            currentQty -= ing.quantity;
+                            tempPantry.set(ing.itemId, currentQty);
+                            if (currentQty <= 0) {
+                                runOutDates.set(ing.itemId, date);
+                            }
+                        }
                     });
                 });
             }
-            return required;
+            return runOutDates;
         }
 
         function masterUpdate() {
             const currentPantry = getPantryStateForDate(currentDate);
-            const projectedUsage = calculateProjectedUsage(currentDate);
+            const runOutDates = calculateRunOutDates(currentPantry);
+
+            const anchor = new Date('2025-09-16T00:00:00');
+            let nextDelivery = new Date(anchor);
+            while (nextDelivery <= currentDate) { nextDelivery.setDate(nextDelivery.getDate() + 14); }
+            let deliveryAfterNext = new Date(nextDelivery);
+            deliveryAfterNext.setDate(deliveryAfterNext.getDate() + 14);
+
             currentPantry.forEach(item => {
-                const requiredAmount = projectedUsage[item.id] || 0;
+                const runOutDate = runOutDates.get(item.id);
+                item.lowStockInfo = { level: 'ok', runsOutDate: null };
+
                 if (item.lowStockThreshold) {
-                    item.isLow = item.quantity < item.lowStockThreshold;
-                } else {
-                    if (item.quantity <= 0) {
-                        item.isLow = true;
-                    } else {
-                        item.isLow = item.quantity < requiredAmount;
+                    if (item.quantity < item.lowStockThreshold) {
+                         item.lowStockInfo = { level: 'urgent', runsOutDate: 'N/A' };
                     }
+                } else if (runOutDate) {
+                    item.lowStockInfo.runsOutDate = runOutDate;
+                    if (runOutDate < nextDelivery) {
+                        item.lowStockInfo.level = 'urgent';
+                    } else if (runOutDate < deliveryAfterNext) {
+                        item.lowStockInfo.level = 'warning';
+                    }
+                } else if (item.quantity <= 0) {
+                     item.lowStockInfo.level = 'urgent';
                 }
             });
+
             renderPantry(currentPantry);
             renderShoppingList(currentPantry);
             
             const lowStockLabel = document.getElementById('low-stock-label');
-            const hasLowStock = currentPantry.some(item => item.isLow);
+            const hasLowStock = currentPantry.some(item => item.lowStockInfo.level !== 'ok');
             if (lowStockLabel) {
                 lowStockLabel.style.display = hasLowStock ? 'inline' : 'none';
             }
@@ -435,17 +442,26 @@
         function renderPantry(pantryData) {
             const pantryList = document.getElementById('pantry-list');
             pantryList.innerHTML = '';
-            const lowStockItems = pantryData.filter(item => item.isLow).sort((a, b) => a.name.localeCompare(b.name));
-            const normalStockItems = pantryData.filter(item => !item.isLow).sort((a, b) => a.name.localeCompare(b.name));
+            const lowStockItems = pantryData.filter(item => item.lowStockInfo.level !== 'ok').sort((a, b) => a.name.localeCompare(b.name));
+            const normalStockItems = pantryData.filter(item => item.lowStockInfo.level === 'ok').sort((a, b) => a.name.localeCompare(b.name));
             const sortedPantry = [...lowStockItems, ...normalStockItems];
             sortedPantry.forEach(item => {
                 const itemElement = document.createElement('div');
-                itemElement.className = `flex justify-between items-center p-2 rounded-md ${item.isLow ? 'bg-red-100 border border-red-200 text-red-800' : 'odd:bg-gray-50'}`;
+                let bgColor = 'odd:bg-gray-50';
+                if (item.lowStockInfo.level === 'urgent') bgColor = 'bg-red-100 border border-red-200 text-red-800';
+                if (item.lowStockInfo.level === 'warning') bgColor = 'bg-yellow-100 border border-yellow-200 text-yellow-800';
+                
+                let runOutHtml = '';
+                if(item.lowStockInfo.runsOutDate) {
+                    runOutHtml = `<span class="text-xs ml-2 opacity-75">(Runs out: ${item.lowStockInfo.runsOutDate.toLocaleDateString('en-GB', {weekday: 'short', day: '2-digit', month: '2-digit'})})</span>`;
+                }
+
+                itemElement.className = `flex justify-between items-center p-2 rounded-md ${bgColor}`;
                 itemElement.innerHTML = `
                     <div class="flex items-center">
                         <button class="remove-one-btn text-red-500 hover:text-red-700 font-bold px-2" data-itemid="${item.id}">-</button>
                         <button class="add-one-btn text-green-600 hover:text-green-800 font-bold px-2" data-itemid="${item.id}">+</button>
-                        <span class="ml-2">${item.isLow ? '⚠️ ' : ''}${item.name}</span>
+                        <span class="ml-2">${item.lowStockInfo.level !== 'ok' ? '⚠️ ' : ''}${item.name} ${runOutHtml}</span>
                     </div>
                     <span class="font-semibold bg-gray-200 px-2 py-1 text-sm rounded-full text-gray-700">${Number(item.quantity.toFixed(2))} ${item.unit}</span>`;
                 pantryList.appendChild(itemElement);
@@ -459,10 +475,18 @@
             dates.Yesterday.setDate(displayDate.getDate() - 1);
             dates.Tomorrow.setDate(displayDate.getDate() + 1);
             const isViewingRealToday = getDateKey(displayDate) === getDateKey(trueToday);
+
+            const anchor = new Date('2025-09-16T00:00:00');
+            
             Object.entries(dates).forEach(([dayName, date]) => {
                 const dateKey = getDateKey(date);
                 const dayPlan = mealPlanState[dateKey] || {};
                 const isInteractiveDay = dayName === 'Today';
+
+                const timeDiff = date.getTime() - anchor.getTime();
+                const dayDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
+                const isDeliveryDay = dayDiff % 14 === 0;
+
                 const dayElement = document.createElement('div');
                 let bgColor = 'bg-gray-50';
                 if(isInteractiveDay) { bgColor = isViewingRealToday ? 'bg-blue-50 border border-blue-200' : 'bg-yellow-50 border border-yellow-200'; }
@@ -487,7 +511,8 @@
                         mealSlotsHTML += `<div><strong class="capitalize">${labelText}:</strong> <span>${meal ? meal.name : 'N/A'}</span></div>`;
                     }
                 });
-                dayElement.innerHTML = `<h3 class="text-lg font-bold ${isInteractiveDay && isViewingRealToday ? 'text-blue-800' : (isInteractiveDay ? 'text-yellow-800' : '')}">${dayName} <span class="font-normal text-gray-500 text-sm">- ${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span></h3>
+                const deliveryHtml = isDeliveryDay ? '<span class="ml-2">🚚</span>' : '';
+                dayElement.innerHTML = `<h3 class="text-lg font-bold ${isInteractiveDay && isViewingRealToday ? 'text-blue-800' : (isInteractiveDay ? 'text-yellow-800' : '')}">${dayName} <span class="font-normal text-gray-500 text-sm">- ${date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>${deliveryHtml}</h3>
                                       <div class="mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">${mealSlotsHTML}</div>`;
                 plannerGrid.appendChild(dayElement);
                 if (isInteractiveDay) {
@@ -546,6 +571,25 @@
             unitSelect.innerHTML = '<option value="">--</option>';
         }
 
+        function renderShoppingList(pantryData) {
+            const shoppingListSection = document.getElementById('shopping-list-section');
+            const shoppingList = document.getElementById('shopping-list');
+            shoppingList.innerHTML = '';
+            const itemsToBuy = pantryData.filter(item => item.lowStockInfo.level !== 'ok');
+            if (itemsToBuy.length === 0) {
+                shoppingListSection.classList.add('hidden');
+                return;
+            }
+            shoppingListSection.classList.remove('hidden');
+            itemsToBuy.sort((a, b) => a.name.localeCompare(b.name)).forEach(item => {
+                const li = document.createElement('li');
+                let colorClass = item.lowStockInfo.level === 'urgent' ? 'text-red-700 font-bold' : 'text-yellow-700';
+                li.className = colorClass;
+                li.textContent = item.name;
+                shoppingList.appendChild(li);
+            });
+        }
+        
         function setupEventListeners() {
             document.getElementById('pantry-list').addEventListener('click', (event) => {
                 const target = event.target;
@@ -683,6 +727,11 @@
                         masterUpdate();
                     }
                 }
+            });
+
+             document.getElementById('reset-today-btn').addEventListener('click', () => {
+                initialPantry = JSON.parse(JSON.stringify(pantryAtStartOfDay));
+                masterUpdate();
             });
 
             document.getElementById('prev-day-btn').addEventListener('click', () => { 
