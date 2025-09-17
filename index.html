@@ -8,7 +8,7 @@
     <!-- Import Firebase modules -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
       
         const firebaseConfig = {
@@ -25,7 +25,19 @@
         const db = getFirestore(app);
         const auth = getAuth(app);
 
-        // Make instances available globally for our main script
+        // Enable offline persistence
+        try {
+            enableIndexedDbPersistence(db);
+            console.log("Firebase offline persistence enabled.");
+        } catch (err) {
+            if (err.code == 'failed-precondition') {
+                console.warn("Firebase offline persistence could not be enabled: multiple tabs open.");
+            } else if (err.code == 'unimplemented') {
+                console.warn("Firebase offline persistence is not available in this browser.");
+            }
+        }
+
+        // Make instances available globally
         window.db = db;
         window.auth = auth;
         window.firestoreFunctions = { doc, onSnapshot, setDoc };
@@ -50,7 +62,7 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-4xl font-bold text-gray-900">Household Grocery Tracker</h1>
-                    <p class="text-gray-600">V3.0 - Secure & Cloud Synced</p>
+                    <p class="text-gray-600">V3.1 - Secure & Cloud Synced</p>
                 </div>
                 <div class="flex items-center">
                     <div id="user-profile" class="text-right mr-4 hidden">
@@ -75,6 +87,10 @@
                 <div id="planner-grid" class="space-y-4"></div>
             </section>
             <aside class="space-y-8">
+                <section id="shopping-list-section" class="bg-white p-6 rounded-lg shadow-md hidden">
+                     <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛒 Shopping List</h2>
+                     <ul id="shopping-list" class="list-disc list-inside space-y-1"></ul>
+                </section>
                 <section id="pantry-view" class="bg-white p-6 rounded-lg shadow-md">
                     <div class="flex justify-between items-center border-b pb-2 mb-4">
                         <h2 class="text-2xl font-semibold">🥫 Pantry</h2>
@@ -83,7 +99,7 @@
                     <div id="pantry-list" class="space-y-2 max-h-[40rem] overflow-y-auto"></div>
                 </section>
                 <section id="grocery-check-in" class="bg-white p-6 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛒 Add Groceries</h2>
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">➕ Add Groceries</h2>
                     <form id="add-groceries-form" class="space-y-3">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div class="flex-grow"><label for="add-grocery-select" class="text-sm font-medium">Item</label><select id="add-grocery-select" class="w-full mt-1 p-2 border rounded-md"></select></div>
@@ -93,7 +109,7 @@
                     </form>
                 </section>
                 <section id="set-stock-section" class="bg-white p-6 rounded-lg shadow-md">
-                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛠️ Correct Stock Levels</h2>
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">🛠️ Correct Stock</h2>
                     <form id="set-stock-form" class="space-y-3">
                         <div><label for="set-stock-select" class="text-sm font-medium">Item</label><select id="set-stock-select" class="w-full mt-1 p-2 border rounded-md"></select></div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -112,59 +128,10 @@
         const { doc, onSnapshot, setDoc } = window.firestoreFunctions;
         const { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } = window.authFunctions;
 
-        // --- DATA "DATABASES" (Defaults for first-time setup) ---
-        const forecastDays = 30;
-
-        let initialPantry = [
-            { id: 'salmon_fillets', name: 'Salmon Fillets', unit: 'portions', quantity: 3 },
-            { id: 'dolmio_sauce', name: 'Dolmio Sauce', unit: 'servings', quantity: 10 },
-            { id: 'bread_loaf', name: 'Bread', unit: 'loaves', quantity: 1 },
-            { id: 'crumpets', name: 'Crumpets', unit: 'count', quantity: 31 },
-            { id: 'fresh_chicken_soup', name: 'Fresh Chicken Soup', unit: 'containers', quantity: 2 },
-            { id: 'frozen_chicken_soup', name: 'Frozen Chicken Soup', unit: 'containers', quantity: 4 },
-            { id: 'chorizo_tortellini', name: 'Chorizo Tortellini', unit: 'packs', quantity: 3 },
-            { id: 'spinach_tortellini', name: 'Spinach Tortellini', unit: 'packs', quantity: 3 },
-            { id: 'fresh_pasta', name: 'Fresh Pasta', unit: 'portions (half pack)', quantity: 2 },
-            { id: 'gnocchi', name: 'Gnocchi', unit: 'packs', quantity: 2 },
-            { id: 'dry_pasta', name: 'Dry Pasta', unit: 'portions (200g)', quantity: 25 },
-            { id: 'oranges', name: 'Oranges', unit: 'count', quantity: 8 },
-            { id: 'chicken_breast', name: 'Chicken Breast', unit: 'count', quantity: 2 },
-            { id: 'peas', name: 'Peas (Frozen)', unit: 'bags (850g)', quantity: 2 },
-            { id: 'sprouts', name: 'Sprouts', unit: 'portions (200g)', quantity: 15 },
-            { id: 'fresh_corn_soup', name: 'Fresh Corn Soup', unit: 'containers', quantity: 3 },
-            { id: 'frozen_leek_soup', name: 'Frozen Leek Soup', unit: 'containers', quantity: 2 },
-            { id: 'potatoes', name: 'Potatoes', unit: 'bags (1kg)', quantity: 2 },
-            { id: 'tortilla_wraps', name: 'Tortilla Wraps', unit: 'portions (4 wraps)', quantity: 2 },
-            { id: 'lettuce', name: 'Lettuce', unit: 'heads', quantity: 1 },
-            { id: 'breaded_chicken_breast', name: 'Breaded Chicken', unit: 'portions', quantity: 2 },
-            { id: 'light_flatbread', name: 'Light Flatbread', unit: 'count', quantity: 4 },
-            { id: 'carrots', name: 'Carrots', unit: 'bags (1kg)', quantity: 1 },
-            { id: 'pork_loin', name: 'Pork Loin', unit: 'portions', quantity: 3 },
-            { id: 'rice', name: 'Rice', unit: 'bags (1kg)', quantity: 1 },
-            { id: 'straight_fries', name: 'Straight Fries', unit: 'portions (500g)', quantity: 1.2 },
-            { id: 'beans', name: 'Beans', unit: 'cans', quantity: 9 },
-            { id: 'sausages', name: 'Sausages', unit: 'portions', quantity: 4 },
-            { id: 'hash_browns', name: 'Hash Browns', unit: 'portions', quantity: 4 },
-            { id: 'chunky_fries', name: 'Chunky Fries', unit: 'portions (500g)', quantity: 8.2 },
-            { id: 'chicken_nuggets', name: 'Chicken Nuggets', unit: 'packs', quantity: 2 },
-            { id: 'heavy_flatbread', name: 'Heavy Flatbread', unit: 'count', quantity: 2 },
-            { id: 'chorizo', name: 'Chorizo Sausage', unit: 'portions (1/4 sausage)', quantity: 4 },
-            { id: 'cheese_pizza', name: 'Cheese Pizza', unit: 'count', quantity: 1 },
-            { id: 'pepperoni_pizza', name: 'Pepperoni Pizza', unit: 'count', quantity: 1 },
-            { id: 'oat_milk', name: 'Oat Milk', unit: 'cartons', quantity: 7, lowStockThreshold: 3 },
-            { id: 'ketchup', name: 'Ketchup', unit: 'bottles', quantity: 3, lowStockThreshold: 2 },
-            { id: 'mayo', name: 'Mayonnaise', unit: 'jars', quantity: 4, lowStockThreshold: 2 },
-            { id: 'squash', name: 'Squash', unit: 'bottles', quantity: 2, lowStockThreshold: 2 },
-            { id: 'sweet_chilli', name: 'Sweet Chilli Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
-            { id: 'mayo_sriracha', name: 'Sriracha Mayo', unit: 'bottles', quantity: 2, lowStockThreshold: 2 },
-            { id: 'sriracha', name: 'Sriracha', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
-            { id: 'hp_sauce', name: 'HP Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 },
-            { id: 'cashew_nuts', name: 'Cashew Nuts', unit: 'bags', quantity: 4, lowStockThreshold: 3 },
-        ];
-        
-        const groceryPackages = [ { id: 'beans_box', name: 'Beans (Box of 6)', contents: { itemId: 'beans', quantity: 6 } }, { id: 'breaded_chicken_pack', name: 'Breaded Chicken (Pack of 4)', contents: { itemId: 'breaded_chicken_breast', quantity: 2 } }, { id: 'carrots_pack', name: 'Carrots (1kg bag)', contents: { itemId: 'carrots', quantity: 1 } }, { id: 'chicken_breast_pack', name: 'Chicken Breast (Pack of 8)', contents: { itemId: 'chicken_breast', quantity: 8 } }, { id: 'chorizo_whole', name: 'Chorizo (Whole Sausage)', contents: { itemId: 'chorizo', quantity: 4 } }, { id: 'chunky_fries_1000', name: 'Chunky Fries (1kg bag)', contents: { itemId: 'chunky_fries', quantity: 2 } }, { id: 'chunky_fries_1600', name: 'Chunky Fries (1.6kg bag)', contents: { itemId: 'chunky_fries', quantity: 3.2 } }, { id: 'crumpets_pack', name: 'Crumpets (Bag of 9)', contents: { itemId: 'crumpets', quantity: 9 } }, { id: 'dolmio_jar', name: 'Dolmio Sauce (Jar)', contents: { itemId: 'dolmio_sauce', quantity: 2 } }, { id: 'dry_pasta_bag', name: 'Dry Pasta (500g bag)', contents: { itemId: 'dry_pasta', quantity: 2.5 } }, { id: 'fresh_pasta_pack', name: 'Fresh Pasta (Full Pack)', contents: { itemId: 'fresh_pasta', quantity: 2 } }, { id: 'hash_browns_pack', name: 'Hash Browns (Pack of 16)', contents: { itemId: 'hash_browns', quantity: 4 } }, { id: 'lettuce_pack', name: 'Lettuce (Pack of 2 heads)', contents: { itemId: 'lettuce', quantity: 2 } }, { id: 'light_flatbread_pack', name: 'Light Flatbread (Pack of 5)', contents: { itemId: 'light_flatbread', quantity: 5 } }, { id: 'oranges_pack', name: 'Oranges (Bag of 8)', contents: { itemId: 'oranges', quantity: 8 } }, { id: 'peas_pack', name: 'Peas (850g bag)', contents: { itemId: 'peas', quantity: 1 } }, { id: 'pork_loin_pack', name: 'Pork Loin (Pack of 8)', contents: { itemId: 'pork_loin', quantity: 4 } }, { id: 'salmon_pack', name: 'Salmon Fillets (Bag of 6)', contents: { itemId: 'salmon_fillets', quantity: 3 } }, { id: 'sausages_pack', name: 'Sausages (Pack of 8)', contents: { itemId: 'sausages', quantity: 2 } }, { id: 'sprouts_pack', name: 'Sprouts (1kg bag)', contents: { itemId: 'sprouts', quantity: 5 } }, { id: 'straight_fries_900', name: 'Straight Fries (900g bag)', contents: { itemId: 'straight_fries', quantity: 1.8 } }, { id: 'straight_fries_1400', name: 'Straight Fries (1.4kg bag)', contents: { itemId: 'straight_fries', quantity: 2.8 } }, { id: 'tortilla_wraps_pack', name: 'Tortilla Wraps (Pack of 8)', contents: { itemId: 'tortilla_wraps', quantity: 2 } }, ];
-        const meals = [ { id: 'no_meal', name: '--- Select Meal ---', ingredients: [] }, { id: 'ate_out', name: 'Ate Out / Takeaway', ingredients: [] }, { id: 'leftovers', name: 'Leftovers', ingredients: [] }, { id: 'orange_breakfast', name: 'Orange', isDynamic: true, dynamicType: 'crumpet', baseIngredients: [{ itemId: 'oranges', quantity: 1 }] }, { id: 'toast', name: 'Toast', ingredients: [{ itemId: 'bread_loaf', quantity: 1/18 }] }, { id: 'sandwiches_soup', name: 'Sandwiches & Soup', isDynamic: true, dynamicType: 'soup', baseIngredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] }, { id: 'wraps', name: 'Wraps', ingredients: [{ itemId: 'lettuce', quantity: 1 }, { itemId: 'breaded_chicken_breast', quantity: 1 }, { itemId: 'tortilla_wraps', quantity: 1 }] }, { id: 'weekend_brunch', name: 'Weekend Brunch', ingredients: [{ itemId: 'sausages', quantity: 1 }, { itemId: 'beans', quantity: 1 }, { itemId: 'hash_browns', quantity: 1 }] }, { id: 'sandwiches_crisps', name: 'Sandwiches & Crisps', ingredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] }, { id: 'pasta_dish', name: 'Pasta Dish', isDynamic: true, dynamicType: 'pasta', baseIngredients: [{ itemId: 'dolmio_sauce', quantity: 1 }] }, { id: 'protein_starch_veg', name: 'Protein, Starch & Veg', isDynamic: true, dynamicType: 'psv' }, { id: 'spinach_tortellini_dinner', name: 'Spinach Tortellini', ingredients: [{ itemId: 'spinach_tortellini', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }, { itemId: 'light_flatbread', quantity: 1 }] }, { id: 'cheese_pizza_fries', name: 'Cheese Pizza & Fries', ingredients: [{ itemId: 'cheese_pizza', quantity: 1 }, { itemId: 'straight_fries', quantity: 1 }] }, { id: 'pepperoni_pizza_fries', name: 'Pepperoni Pizza & Fries', ingredients: [{ itemId: 'pepperoni_pizza', quantity: 1 }, { id: 'straight_fries', quantity: 1 }] }, { id: 'nuggets_fries', name: 'Nuggets & Chunky Fries', ingredients: [{ itemId: 'chicken_nuggets', quantity: 1 }, { itemId: 'chunky_fries', quantity: 1 }] }, { id: 'chorizo_tortellini_dinner', name: 'Chorizo Tortellini', ingredients: [{ itemId: 'chorizo_tortellini', quantity: 1 }, { itemId: 'chorizo', quantity: 1 }, { itemId: 'heavy_flatbread', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }] }, ];
-        const dynamicOptions = { crumpet: [ { id: 'no_crumpet', name: 'No Crumpet', ingredient: null }, { id: 'with_crumpet', name: 'With Crumpet', ingredient: { itemId: 'crumpets', quantity: 1 } } ], soup: [ { id: 'no_soup', name: '--- Select Soup ---', ingredient: null }, { id: 'fresh_chicken', name: 'Fresh Chicken Soup', ingredient: { itemId: 'fresh_chicken_soup', quantity: 1 } }, { id: 'frozen_chicken', name: 'Frozen Chicken Soup', ingredient: { itemId: 'frozen_chicken_soup', quantity: 1 } }, { id: 'fresh_corn', name: 'Fresh Corn Soup', ingredient: { itemId: 'fresh_corn_soup', quantity: 1 } }, { id: 'frozen_leek', name: 'Frozen Leek Soup', ingredient: { itemId: 'frozen_leek_soup', quantity: 1 } } ], pastaProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'salmon', name: 'Salmon', ingredient: { itemId: 'salmon_fillets', quantity: 1 } }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ], pastaCarb: [ { id: 'no_carb', name: '--- Pasta Type ---', ingredient: null }, { id: 'dry', name: 'Dry Pasta', ingredient: { itemId: 'dry_pasta', quantity: 1 } }, { id: 'chorizo_tort', name: 'Chorizo Tortellini', ingredient: { itemId: 'chorizo_tortellini', quantity: 1 } }, { id: 'spinach_tort', name: 'Spinach Tortellini', ingredient: { itemId: 'spinach_tortellini', quantity: 1 } }, { id: 'fresh', name: 'Fresh Pasta', ingredient: { itemId: 'fresh_pasta', quantity: 1 } }, { id: 'gnocchi', name: 'Gnocchi', ingredient: { itemId: 'gnocchi', quantity: 1 } } ], psvProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ], psvStarch: [ { id: 'no_starch', name: '--- Starch ---', ingredient: null }, { id: 'potatoes', name: 'Potatoes', ingredient: { itemId: 'potatoes', quantity: 0.5 } }, { id: 'rice', name: 'Rice', ingredient: { itemId: 'rice', quantity: 0.165 } } ], psvVeg: [ { id: 'no_veg', name: '--- Veg ---', ingredient: null }, { id: 'peas', name: 'Peas', ingredient: { itemId: 'peas', quantity: 200/850 } }, { id: 'sprouts', name: 'Sprouts', ingredient: { itemId: 'sprouts', quantity: 1 } }, { id: 'carrots', name: 'Carrots', ingredient: { itemId: 'carrots', quantity: 0.2 } } ] };
+        let initialPantry = [ { id: 'salmon_fillets', name: 'Salmon Fillets', unit: 'portions', quantity: 3 }, { id: 'dolmio_sauce', name: 'Dolmio Sauce', unit: 'servings', quantity: 10 }, { id: 'bread_loaf', name: 'Bread', unit: 'loaves', quantity: 1 }, { id: 'crumpets', name: 'Crumpets', unit: 'count', quantity: 31 }, { id: 'fresh_chicken_soup', name: 'Fresh Chicken Soup', unit: 'containers', quantity: 2 }, { id: 'frozen_chicken_soup', name: 'Frozen Chicken Soup', unit: 'containers', quantity: 4 }, { id: 'chorizo_tortellini', name: 'Chorizo Tortellini', unit: 'packs', quantity: 3 }, { id: 'spinach_tortellini', name: 'Spinach Tortellini', unit: 'packs', quantity: 3 }, { id: 'fresh_pasta', name: 'Fresh Pasta', unit: 'portions (half pack)', quantity: 2 }, { id: 'gnocchi', name: 'Gnocchi', unit: 'packs', quantity: 2 }, { id: 'dry_pasta', name: 'Dry Pasta', unit: 'portions (200g)', quantity: 25 }, { id: 'oranges', name: 'Oranges', unit: 'count', quantity: 8 }, { id: 'chicken_breast', name: 'Chicken Breast', unit: 'count', quantity: 2 }, { id: 'peas', name: 'Peas (Frozen)', unit: 'bags (850g)', quantity: 2 }, { id: 'sprouts', name: 'Sprouts', unit: 'portions (200g)', quantity: 15 }, { id: 'fresh_corn_soup', name: 'Fresh Corn Soup', unit: 'containers', quantity: 3 }, { id: 'frozen_leek_soup', name: 'Frozen Leek Soup', unit: 'containers', quantity: 2 }, { id: 'potatoes', name: 'Potatoes', unit: 'bags (1kg)', quantity: 2 }, { id: 'tortilla_wraps', name: 'Tortilla Wraps', unit: 'portions (4 wraps)', quantity: 2 }, { id: 'lettuce', name: 'Lettuce', unit: 'heads', quantity: 1 }, { id: 'breaded_chicken_breast', name: 'Breaded Chicken', unit: 'portions', quantity: 2 }, { id: 'light_flatbread', name: 'Light Flatbread', unit: 'count', quantity: 4 }, { id: 'carrots', name: 'Carrots', unit: 'bags (1kg)', quantity: 1 }, { id: 'pork_loin', name: 'Pork Loin', unit: 'portions', quantity: 3 }, { id: 'rice', name: 'Rice', unit: 'bags (1kg)', quantity: 1 }, { id: 'crispy_fries', name: 'Crispy Fries', unit: 'portions (500g)', quantity: 1.2 }, { id: 'beans', name: 'Beans', unit: 'cans', quantity: 9 }, { id: 'sausages', name: 'Sausages', unit: 'portions', quantity: 4 }, { id: 'hash_browns', name: 'Hash Browns', unit: 'portions', quantity: 4 }, { id: 'chunky_fries', name: 'Chunky Fries', unit: 'portions (500g)', quantity: 8.2 }, { id: 'chicken_nuggets', name: 'Chicken Nuggets', unit: 'packs', quantity: 2 }, { id: 'heavy_flatbread', name: 'Heavy Flatbread', unit: 'count', quantity: 2 }, { id: 'chorizo', name: 'Chorizo Sausage', unit: 'portions (1/4 sausage)', quantity: 4 }, { id: 'cheese_pizza', name: 'Cheese Pizza', unit: 'count', quantity: 1 }, { id: 'pepperoni_pizza', name: 'Pepperoni Pizza', unit: 'count', quantity: 1 }, { id: 'oat_milk', name: 'Oat Milk', unit: 'cartons', quantity: 7, lowStockThreshold: 3 }, { id: 'ketchup', name: 'Ketchup', unit: 'bottles', quantity: 3, lowStockThreshold: 2 }, { id: 'mayo', name: 'Mayonnaise', unit: 'jars', quantity: 4, lowStockThreshold: 2 }, { id: 'squash', name: 'Squash', unit: 'bottles', quantity: 2, lowStockThreshold: 2 }, { id: 'sweet_chilli', name: 'Sweet Chilli Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 }, { id: 'mayo_sriracha', name: 'Sriracha Mayo', unit: 'bottles', quantity: 2, lowStockThreshold: 2 }, { id: 'sriracha', name: 'Sriracha', unit: 'bottles', quantity: 1, lowStockThreshold: 2 }, { id: 'hp_sauce', name: 'HP Sauce', unit: 'bottles', quantity: 1, lowStockThreshold: 2 }, { id: 'cashew_nuts', name: 'Cashew Nuts', unit: 'bags', quantity: 4, lowStockThreshold: 3 }, ];
+        const groceryPackages = [ { id: 'beans_box', name: 'Beans (Box of 6)', contents: { itemId: 'beans', quantity: 6 } }, { id: 'breaded_chicken_pack', name: 'Breaded Chicken (Pack of 4)', contents: { itemId: 'breaded_chicken_breast', quantity: 2 } }, { id: 'carrots_pack', name: 'Carrots (1kg bag)', contents: { itemId: 'carrots', quantity: 1 } }, { id: 'chorizo_whole', name: 'Chorizo (Whole Sausage)', contents: { itemId: 'chorizo', quantity: 4 } }, { id: 'chunky_fries_1000', name: 'Chunky Fries (1kg bag)', contents: { itemId: 'chunky_fries', quantity: 2 } }, { id: 'chunky_fries_1600', name: 'Chunky Fries (1.6kg bag)', contents: { itemId: 'chunky_fries', quantity: 3.2 } }, { id: 'crumpets_pack', name: 'Crumpets (Bag of 9)', contents: { itemId: 'crumpets', quantity: 9 } }, { id: 'dolmio_jar', name: 'Dolmio Sauce (Jar)', contents: { itemId: 'dolmio_sauce', quantity: 2 } }, { id: 'dry_pasta_bag', name: 'Dry Pasta (500g bag)', contents: { itemId: 'dry_pasta', quantity: 2.5 } }, { id: 'fresh_pasta_pack', name: 'Fresh Pasta (Full Pack)', contents: { itemId: 'fresh_pasta', quantity: 2 } }, { id: 'hash_browns_pack', name: 'Hash Browns (Pack of 16)', contents: { itemId: 'hash_browns', quantity: 4 } }, { id: 'lettuce_pack', name: 'Lettuce (Pack of 2 heads)', contents: { itemId: 'lettuce', quantity: 2 } }, { id: 'light_flatbread_pack', name: 'Light Flatbread (Pack of 5)', contents: { itemId: 'light_flatbread', quantity: 5 } }, { id: 'peas_pack', name: 'Peas (850g bag)', contents: { itemId: 'peas', quantity: 1 } }, { id: 'pork_loin_pack', name: 'Pork Loin (Pack of 8)', contents: { itemId: 'pork_loin', quantity: 4 } }, { id: 'salmon_pack', name: 'Salmon Fillets (Bag of 6)', contents: { itemId: 'salmon_fillets', quantity: 3 } }, { id: 'sausages_pack', name: 'Sausages (Pack of 8)', contents: { itemId: 'sausages', quantity: 2 } }, { id: 'sprouts_pack', name: 'Sprouts (1kg bag)', contents: { itemId: 'sprouts', quantity: 5 } }, { id: 'crispy_fries_900', name: 'Crispy Fries (900g bag)', contents: { itemId: 'crispy_fries', quantity: 1.8 } }, { id: 'crispy_fries_1400', name: 'Crispy Fries (1.4kg bag)', contents: { itemId: 'crispy_fries', quantity: 2.8 } }, { id: 'tortilla_wraps_pack', name: 'Tortilla Wraps (Pack of 8)', contents: { itemId: 'tortilla_wraps', quantity: 2 } }, ];
+        const meals = [ { id: 'no_meal', name: '--- Select Meal ---', ingredients: [] }, { id: 'ate_out', name: 'Ate Out / Takeaway', ingredients: [] }, { id: 'leftovers', name: 'Leftovers', ingredients: [] }, { id: 'orange_breakfast', name: 'Orange', isDynamic: true, dynamicType: 'crumpet', baseIngredients: [{ itemId: 'oranges', quantity: 1 }] }, { id: 'toast', name: 'Toast', ingredients: [{ itemId: 'bread_loaf', quantity: 1/18 }] }, { id: 'sandwiches_soup', name: 'Sandwiches & Soup', isDynamic: true, dynamicType: 'soup', baseIngredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] }, { id: 'wraps', name: 'Wraps', ingredients: [{ itemId: 'lettuce', quantity: 1 }, { itemId: 'breaded_chicken_breast', quantity: 1 }, { itemId: 'tortilla_wraps', quantity: 1 }] }, { id: 'weekend_brunch', name: 'Weekend Brunch', ingredients: [{ itemId: 'sausages', quantity: 1 }, { itemId: 'beans', quantity: 1 }, { itemId: 'hash_browns', quantity: 1 }] }, { id: 'sandwiches_crisps', name: 'Sandwiches & Crisps', ingredients: [{ itemId: 'bread_loaf', quantity: 4/18 }] }, { id: 'pasta_dish', name: 'Pasta Dish', isDynamic: true, dynamicType: 'pasta', baseIngredients: [{ itemId: 'dolmio_sauce', quantity: 1 }] }, { id: 'protein_starch_veg', name: 'Protein, Starch & Veg', isDynamic: true, dynamicType: 'psv' }, { id: 'spinach_tortellini_dinner', name: 'Spinach Tortellini', ingredients: [{ itemId: 'spinach_tortellini', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }, { itemId: 'light_flatbread', quantity: 1 }] }, { id: 'cheese_pizza_fries', name: 'Cheese Pizza & Fries', ingredients: [{ itemId: 'cheese_pizza', quantity: 1 }, { itemId: 'crispy_fries', quantity: 1 }] }, { id: 'pepperoni_pizza_fries', name: 'Pepperoni Pizza & Fries', ingredients: [{ itemId: 'pepperoni_pizza', quantity: 1 }, { itemId: 'crispy_fries', quantity: 1 }] }, { id: 'nuggets_fries', name: 'Nuggets & Chunky Fries', ingredients: [{ itemId: 'chicken_nuggets', quantity: 1 }, { itemId: 'chunky_fries', quantity: 1 }] }, { id: 'chorizo_tortellini_dinner', name: 'Chorizo Tortellini', ingredients: [{ itemId: 'chorizo_tortellini', quantity: 1 }, { itemId: 'chorizo', quantity: 1 }, { itemId: 'heavy_flatbread', quantity: 1 }, { itemId: 'dolmio_sauce', quantity: 1 }] }, ];
+        const dynamicOptions = { crumpet: [ { id: 'no_crumpet', name: 'No Crumpet', ingredient: null }, { id: 'with_crumpet', name: 'With Crumpet', ingredient: { itemId: 'crumpets', quantity: 1 } } ], soup: [ { id: 'no_soup', name: '--- Select Soup ---', ingredient: null }, { id: 'fresh_chicken', name: 'Fresh Chicken Soup', ingredient: { itemId: 'fresh_chicken_soup', quantity: 1 } }, { id: 'frozen_chicken', name: 'Frozen Chicken Soup', ingredient: { itemId: 'frozen_chicken_soup', quantity: 1 } }, { id: 'fresh_corn', name: 'Fresh Corn Soup', ingredient: { itemId: 'fresh_corn_soup', quantity: 1 } }, { id: 'frozen_leek', name: 'Frozen Leek Soup', ingredient: { itemId: 'frozen_leek_soup', quantity: 1 } } ], pastaProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'salmon', name: 'Salmon', ingredient: { itemId: 'salmon_fillets', quantity: 1 } }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ], pastaCarb: [ { id: 'no_carb', name: '--- Pasta Type ---', ingredient: null }, { id: 'dry', name: 'Dry Pasta', ingredient: { itemId: 'dry_pasta', quantity: 1 } }, { id: 'chorizo_tort', name: 'Chorizo Tortellini', ingredient: { itemId: 'chorizo_tortellini', quantity: 1 } }, { id: 'spinach_tort', name: 'Spinach Tortellini', ingredient: { itemId: 'spinach_tortellini', quantity: 1 } }, { id: 'fresh', name: 'Fresh Pasta', ingredient: { itemId: 'fresh_pasta', quantity: 1 } }, { id: 'gnocchi', name: 'Gnocchi', ingredient: { itemId: 'gnocchi', quantity: 1 } } ], psvProtein: [ { id: 'no_protein', name: '--- Protein ---', ingredient: null }, { id: 'chicken', name: 'Chicken', ingredient: { itemId: 'chicken_breast', quantity: 1 } }, { id: 'pork', name: 'Pork', ingredient: { itemId: 'pork_loin', quantity: 1 } } ], psvStarch: [ { id: 'no_starch', name: '--- Starch ---', ingredient: null }, { id: 'potatoes', name: 'Potatoes', ingredient: { itemId: 'potatoes', quantity: 0.5 } }, { id: 'rice', name: 'Rice', ingredient: { itemId: 'rice', quantity: 0.165 } } ], psvVeg: [ { id: 'no_veg', name: '--- Veg ---', ingredient: null }, { id: 'peas', name: 'Peas', ingredient: { itemId: 'peas', quantity: 200/850 } }, { id: 'sprouts', name: 'Sprouts', ingredient: { itemId: 'sprouts', quantity: 1 } }, { id: 'carrots', name: 'Carrots', ingredient: { itemId: 'carrots', quantity: 0.4 } } ] };
         const defaultWeeklyPlan = { breakfast_j: ['orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast', 'orange_breakfast'], breakfast_t: ['toast', 'toast', 'toast', 'toast', 'toast', 'toast', 'toast'], lunch: ['sandwiches_crisps', 'sandwiches_soup', 'sandwiches_soup', 'wraps', 'sandwiches_soup', 'wraps', 'sandwiches_soup'], dinner: ['chorizo_tortellini_dinner', 'pasta_dish', 'protein_starch_veg', 'spinach_tortellini_dinner', 'protein_starch_veg', 'cheese_pizza_fries', 'nuggets_fries'], };
         
         let mealPlanState = {};
@@ -177,7 +144,6 @@
         const dataRef = doc(window.db, "trackerData", "appData");
 
         async function saveState() {
-            // This function now saves the entire state to a single document.
             try {
                 const dataToSave = {
                     pantry: initialPantry,
@@ -214,7 +180,7 @@
                 } else {
                     console.log("No data found in Firebase. Initializing and saving.");
                     initializeMealPlanState();
-                    saveState(); // Save the initial default state
+                    saveState();
                 }
                 
                 updateUIOnLoad();
@@ -228,10 +194,9 @@
             for (let i = -14; i < 365; i++) {
                 const date = new Date(today);
                 date.setDate(today.getDate() + i);
-                const dayOfWeek = date.getDay(); // Sunday: 0, Monday: 1, etc.
+                const dayOfWeek = date.getDay();
                 const dateKey = getDateKey(date);
                 if (mealPlanState[dateKey]) continue;
-
                 const weekNumber = Math.floor(i / 7);
                 let dinnerMealId = defaultWeeklyPlan.dinner[dayOfWeek];
                 if (dinnerMealId === 'cheese_pizza_fries' && weekNumber % 2 !== 0) {
@@ -247,27 +212,24 @@
                     dinner: { mealId: dinnerMealId || 'no_meal' },
                 };
                 
-                const crumpetDays = [0, 1, 2, 4, 6]; // Sun, Mon, Tue, Thu, Sat
+                const crumpetDays = [0, 1, 2, 4, 6];
                 if (breakfastJMealId === 'orange_breakfast' && crumpetDays.includes(dayOfWeek)) {
                     mealPlanState[dateKey].breakfast_j.dynamicChoice = 'with_crumpet';
                 }
-
                 if (lunchMealId === 'sandwiches_soup') {
                     if (dayOfWeek === 1 || dayOfWeek === 4) { mealPlanState[dateKey].lunch.dynamicChoice = 'fresh_chicken'; } 
                     else if (dayOfWeek === 2 || dayOfWeek === 6) { mealPlanState[dateKey].lunch.dynamicChoice = 'fresh_corn'; }
                 }
-
-                if (dinnerMealId === 'pasta_dish' && dayOfWeek === 1) { // Monday
+                if (dinnerMealId === 'pasta_dish' && dayOfWeek === 1) {
                     mealPlanState[dateKey].dinner.proteinChoice = 'salmon';
                     mealPlanState[dateKey].dinner.carbChoice = 'dry';
                 }
-
                 if (dinnerMealId === 'protein_starch_veg') {
-                    if (dayOfWeek === 2) { // Tuesday
+                    if (dayOfWeek === 2) {
                         mealPlanState[dateKey].dinner.psvProteinChoice = 'chicken';
                         mealPlanState[dateKey].dinner.psvStarchChoice = 'potatoes';
                         mealPlanState[dateKey].dinner.psvVegChoice = 'peas';
-                    } else if (dayOfWeek === 4) { // Thursday
+                    } else if (dayOfWeek === 4) {
                         mealPlanState[dateKey].dinner.psvProteinChoice = 'pork';
                         mealPlanState[dateKey].dinner.psvStarchChoice = 'rice';
                         mealPlanState[dateKey].dinner.psvVegChoice = 'carrots';
@@ -279,9 +241,7 @@
         function catchUpPantry(lastOpenedDateKey) {
             const todayKey = getDateKey(trueToday);
             const pantryMap = new Map(initialPantry.map(item => [item.id, JSON.parse(JSON.stringify(item))]));
-
             const sortedDateKeys = Object.keys(mealPlanState).sort();
-
             for (const dateKey of sortedDateKeys) {
                 if (dateKey >= lastOpenedDateKey && dateKey < todayKey) {
                     const dayPlan = mealPlanState[dateKey];
@@ -330,7 +290,6 @@
             if (simulatedDateKey > trueTodayKey) {
                 const pantryMap = new Map(currentPantry.map(item => [item.id, item]));
                 const sortedDateKeys = Object.keys(mealPlanState).sort();
-
                 for (const dateKey of sortedDateKeys) {
                     if (dateKey >= trueTodayKey && dateKey < simulatedDateKey) {
                         const dayPlan = mealPlanState[dateKey];
@@ -462,6 +421,7 @@
                 }
             });
             renderPantry(currentPantry);
+            renderShoppingList(currentPantry);
             
             const lowStockLabel = document.getElementById('low-stock-label');
             const hasLowStock = currentPantry.some(item => item.isLow);
@@ -585,7 +545,7 @@
             });
             unitSelect.innerHTML = '<option value="">--</option>';
         }
-        
+
         function setupEventListeners() {
             document.getElementById('pantry-list').addEventListener('click', (event) => {
                 const target = event.target;
@@ -746,7 +706,7 @@
                     pauseBtn.classList.add('bg-green-500', 'hover:bg-green-600');
                 } else {
                     trueToday = new Date(); // Reset 'today' to now
-                    localStorage.setItem('groceryTrackerLastOpened', getDateKey(trueToday));
+                    saveState(); // Save the new last opened date immediately
                     pauseBtn.textContent = 'Pause Tracker';
                     pauseBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
                     pauseBtn.classList.add('bg-orange-500', 'hover:bg-orange-600');
