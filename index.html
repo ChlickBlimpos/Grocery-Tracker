@@ -62,7 +62,7 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-4xl font-bold text-gray-900">Household Grocery Tracker</h1>
-                    <p class="text-gray-600">V3.5 TEST Croissant Fix</p>
+                    <p class="text-gray-600">V4.0Alpha Add New Pantry Item TEST</p>
                 </div>
                 <div class="flex items-center">
                     <div id="user-profile" class="text-right mr-4 hidden">
@@ -116,6 +116,26 @@
                         <div class="flex space-x-2"><button type="submit" class="w-full bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-700 transition-colors">Set Stock</button><button type="button" id="reset-stock-btn" class="w-full bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition-colors">Reset to 0</button></div>
                     </form>
                 </section>
+                <section id="add-new-item-section" class="bg-white p-6 rounded-lg shadow-md">
+                    <h2 class="text-2xl font-semibold mb-4 border-b pb-2">✨ Add New Pantry Item</h2>
+                    <form id="add-new-item-form" class="space-y-3">
+                        <div>
+                            <label for="new-item-name" class="text-sm font-medium">Item Name</label>
+                            <input type="text" id="new-item-name" class="w-full mt-1 p-2 border rounded-md" placeholder="e.g., Avocado" required>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label for="new-item-unit" class="text-sm font-medium">Unit</label>
+                                <input type="text" id="new-item-unit" class="w-full mt-1 p-2 border rounded-md" placeholder="e.g., count" required>
+                            </div>
+                            <div>
+                                <label for="new-item-quantity" class="text-sm font-medium">Initial Quantity</label>
+                                <input type="number" step="any" id="new-item-quantity" class="w-full mt-1 p-2 border rounded-md" min="0" value="0">
+                            </div>
+                        </div>
+                        <button type="submit" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors">Create Item</button>
+                    </form>
+                </section>
             </aside>
         </main>
     </div>
@@ -664,6 +684,46 @@
                     quantityInput.value = "";
                 }
             });
+
+            document.getElementById('add-new-item-form').addEventListener('submit', (event) => {
+                event.preventDefault();
+                const nameInput = document.getElementById('new-item-name');
+                const unitInput = document.getElementById('new-item-unit');
+                const quantityInput = document.getElementById('new-item-quantity');
+
+                const name = nameInput.value.trim();
+                const unit = unitInput.value.trim();
+                const quantity = parseFloat(quantityInput.value) || 0;
+
+                // Basic validation to ensure fields are not empty
+                if (!name || !unit) {
+                    alert('Please provide both a name and a unit for the new item.');
+                    return;
+                }
+
+                // Generate a simple ID from the name (e.g., "Sweet Potatoes" -> "sweet_potatoes")
+                const id = name.toLowerCase().replace(/\s+/g, '_');
+
+                // Check if an item with this ID already exists
+                const itemExists = initialPantry.some(item => item.id === id);
+                if (itemExists) {
+                    alert(`An item with the ID '${id}' already exists. Please choose a different name.`);
+                    return;
+                }
+
+                // Create the new item object and add it to our main pantry array
+                const newItem = { id, name, unit, quantity };
+                initialPantry.push(newItem);
+
+                // Re-render the UI elements that depend on the pantry list
+                masterUpdate();
+                renderGroceryForm();
+                renderSetStockForm();
+                alert(`Successfully added "${name}" to the pantry!`);
+
+                // Clear the form for the next entry
+                event.target.reset();
+            });
             
             document.getElementById('set-stock-select').addEventListener('change', (event) => {
                 const itemId = event.target.value;
@@ -842,6 +902,7 @@
     </script>
 </body>
 </html>
+
 
 
 
