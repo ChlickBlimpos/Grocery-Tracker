@@ -637,35 +637,33 @@
                 }
             });
 
-document.getElementById('add-groceries-form').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const select = document.getElementById('add-grocery-select');
-    const quantityInput = document.getElementById('add-grocery-quantity');
-    const selectedOption = select.options[select.selectedIndex];
-    const itemId = select.value;
-    const itemType = selectedOption.dataset.type;
-    const quantity = parseFloat(quantityInput.value);
+            document.getElementById('add-groceries-form').addEventListener('submit', (event) => {
+                event.preventDefault();
+                const select = document.getElementById('add-grocery-select');
+                const quantityInput = document.getElementById('add-grocery-quantity');
+                const selectedOption = select.options[select.selectedIndex];
+                const itemId = select.value;
+                const itemType = selectedOption.dataset.type;
+                const quantity = parseFloat(quantityInput.value);
 
-    if (itemId && quantity > 0) {
-        if (itemType === 'package') {
-            const pkg = groceryPackages.find(p => p.id === itemId);
-            if (pkg) {
-                const pantryItem = initialPantry.find(p => p.id === pkg.contents.itemId);
-                if (pantryItem) {
-                    pantryItem.quantity += pkg.contents.quantity * quantity;
+                if (itemId && quantity > 0) {
+                    if (itemType === 'package') {
+                        const pkg = groceryPackages.find(p => p.id === itemId);
+                        if (pkg) {
+                            const pantryItem = initialPantry.find(p => p.id === pkg.contents.itemId);
+                            if (pantryItem) {
+                                pantryItem.quantity += pkg.contents.quantity * quantity;
+                            }
+                        }
+                    } else {
+                        const pantryItem = initialPantry.find(p => p.id === itemId);
+                        if (pantryItem) pantryItem.quantity += quantity;
+                    }
+                    masterUpdate();
+                    select.value = "";
+                    quantityInput.value = "";
                 }
-            }
-        } else { // 'single' item type
-            const pantryItem = initialPantry.find(p => p.id === itemId);
-            if (pantryItem) {
-                pantryItem.quantity += quantity;
-            }
-        }
-        masterUpdate();
-        select.value = "";
-        quantityInput.value = "";
-    }
-});
+            });
             
             document.getElementById('set-stock-select').addEventListener('change', (event) => {
                 const itemId = event.target.value;
@@ -844,4 +842,3 @@ document.getElementById('add-groceries-form').addEventListener('submit', (event)
     </script>
 </body>
 </html>
-
